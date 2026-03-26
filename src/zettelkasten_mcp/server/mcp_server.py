@@ -1,25 +1,34 @@
 """MCP server implementation for the Zettelkasten."""
+
 import logging
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
-from sqlalchemy import exc as sqlalchemy_exc
+
 from mcp.server.fastmcp import Context, FastMCP
+from sqlalchemy import exc as sqlalchemy_exc
+
 from zettelkasten_mcp.config import config
-from zettelkasten_mcp.models.schema import LinkType, Note, NoteType, Tag
+from zettelkasten_mcp.models.schema import (
+    LinkType,
+    Note,
+    NoteSource,
+    NoteType,
+    Tag,
+    TaskStatus,
+)
 from zettelkasten_mcp.services.search_service import SearchService
 from zettelkasten_mcp.services.zettel_service import ZettelService
 
 logger = logging.getLogger(__name__)
 
+
 class ZettelkastenMcpServer:
     """MCP server for Zettelkasten."""
+
     def __init__(self):
         """Initialize the MCP server."""
-        self.mcp = FastMCP(
-            config.server_name,
-            version=config.server_version
-        )
+        self.mcp = FastMCP(config.server_name, version=config.server_version)
         # Services
         self.zettel_service = ZettelService()
         self.search_service = SearchService(self.zettel_service)
@@ -38,16 +47,16 @@ class ZettelkastenMcpServer:
 
     def format_error_response(self, error: Exception) -> str:
         """Format an error response in a consistent way.
-        
+
         Args:
             error: The exception that occurred
-            
+
         Returns:
             Formatted error message with appropriate level of detail
         """
         # Generate a unique error ID for traceability in logs
         error_id = str(uuid.uuid4())[:8]
-        
+
         if isinstance(error, ValueError):
             # Domain validation errors - typically safe to show to users
             logger.error(f"Validation error [{error_id}]: {str(error)}")
@@ -65,18 +74,22 @@ class ZettelkastenMcpServer:
 
     def _register_tools(self) -> None:
         """Register MCP tools."""
+
         # Create a new note
         @self.mcp.tool(name="zk_create_note")
         def zk_create_note(
-            title: str, 
-            content: str, 
+            title: str,
+            content: str,
             note_type: str = "permanent",
-            tags: Optional[str] = None
+            tags: Optional[str] = None,
         ) -> str:
             """Create a new Zettelkasten note.
             Args:
                 title: The title of the note
                 content: The main content of the note
+                note_type: Type of note. Knowledge types: fleeting, literature, permanent,
+                    structure, hub. Action-item types: task, project, area.
+                    For tasks prefer zk_create_task which exposes task-specific fields.
                 note_type: Type of note (fleeting, literature, permanent, structure, hub)
                 tags: Comma-separated list of tags (optional)
             """
@@ -86,12 +99,12 @@ class ZettelkastenMcpServer:
                     note_type_enum = NoteType(note_type.lower())
                 except ValueError:
                     return f"Invalid note type: {note_type}. Valid types are: {', '.join(t.value for t in NoteType)}"
-                
+
                 # Convert tags string to list
                 tag_list = []
                 if tags:
                     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-                
+
                 # Create the note
                 note = self.zettel_service.create_note(
                     title=title,
@@ -119,7 +132,7 @@ class ZettelkastenMcpServer:
                     note = self.zettel_service.get_note_by_title(identifier)
                 if not note:
                     return f"Note not found: {identifier}"
-                
+
                 # Format the note
                 result = f"# {note.title}\n"
                 result += f"ID: {note.id}\n"
@@ -141,7 +154,7 @@ class ZettelkastenMcpServer:
             title: Optional[str] = None,
             content: Optional[str] = None,
             note_type: Optional[str] = None,
-            tags: Optional[str] = None
+            tags: Optional[str] = None,
         ) -> str:
             """Update an existing note.
             Args:
@@ -156,7 +169,7 @@ class ZettelkastenMcpServer:
                 note = self.zettel_service.get_note(str(note_id))
                 if not note:
                     return f"Note not found: {note_id}"
-                
+
                 # Convert note_type string to enum if provided
                 note_type_enum = None
                 if note_type:
@@ -164,19 +177,19 @@ class ZettelkastenMcpServer:
                         note_type_enum = NoteType(note_type.lower())
                     except ValueError:
                         return f"Invalid note type: {note_type}. Valid types are: {', '.join(t.value for t in NoteType)}"
-                
+
                 # Convert tags string to list if provided
                 tag_list = None
                 if tags is not None:  # Allow empty string to clear tags
                     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-                
+
                 # Update the note
                 updated_note = self.zettel_service.update_note(
                     note_id=note_id,
                     title=title,
                     content=content,
                     note_type=note_type_enum,
-                    tags=tag_list
+                    tags=tag_list,
                 )
                 return f"Note updated successfully: {updated_note.id}"
             except Exception as e:
@@ -194,7 +207,7 @@ class ZettelkastenMcpServer:
                 note = self.zettel_service.get_note(note_id)
                 if not note:
                     return f"Note not found: {note_id}"
-                
+
                 # Delete the note
                 self.zettel_service.delete_note(str(note_id))
                 return f"Note deleted successfully: {note_id}"
@@ -208,7 +221,7 @@ class ZettelkastenMcpServer:
             target_id: str,
             link_type: str = "reference",
             description: Optional[str] = None,
-            bidirectional: bool = False
+            bidirectional: bool = False,
         ) -> str:
             """Create a link between two notes.
             Args:
@@ -226,14 +239,14 @@ class ZettelkastenMcpServer:
                     link_type_enum = LinkType(link_type.lower())
                 except ValueError:
                     return f"Invalid link type: {link_type}. Valid types are: {', '.join(t.value for t in LinkType)}"
-                
+
                 # Create the link
                 source_note, target_note = self.zettel_service.create_link(
                     source_id=source_id,
                     target_id=target_id,
                     link_type=link_type_enum,
                     description=description,
-                    bidirectional=bidirectional
+                    bidirectional=bidirectional,
                 )
                 if bidirectional:
                     return f"Bidirectional link created between {source_id} and {target_id}"
@@ -243,14 +256,13 @@ class ZettelkastenMcpServer:
                 if "UNIQUE constraint failed" in str(e):
                     return f"A link of this type already exists between these notes. Try a different link type."
                 return self.format_error_response(e)
+
         self.zk_create_link = zk_create_link
 
         # Remove a link between notes
         @self.mcp.tool(name="zk_remove_link")
         def zk_remove_link(
-            source_id: str,
-            target_id: str,
-            bidirectional: bool = False
+            source_id: str, target_id: str, bidirectional: bool = False
         ) -> str:
             """Remove a link between two notes.
             Args:
@@ -263,7 +275,7 @@ class ZettelkastenMcpServer:
                 source_note, target_note = self.zettel_service.remove_link(
                     source_id=str(source_id),
                     target_id=str(target_id),
-                    bidirectional=bidirectional
+                    bidirectional=bidirectional,
                 )
                 if bidirectional:
                     return f"Bidirectional link removed between {source_id} and {target_id}"
@@ -278,7 +290,7 @@ class ZettelkastenMcpServer:
             query: Optional[str] = None,
             tags: Optional[str] = None,
             note_type: Optional[str] = None,
-            limit: int = 10
+            limit: int = 10,
         ) -> str:
             """Search for notes by text, tags, or type.
             Args:
@@ -292,7 +304,7 @@ class ZettelkastenMcpServer:
                 tag_list = None
                 if tags:
                     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-                
+
                 # Convert note_type string to enum if provided
                 note_type_enum = None
                 if note_type:
@@ -300,26 +312,26 @@ class ZettelkastenMcpServer:
                         note_type_enum = NoteType(note_type.lower())
                     except ValueError:
                         return f"Invalid note type: {note_type}. Valid types are: {', '.join(t.value for t in NoteType)}"
-                
+
                 # Perform search
                 results = self.search_service.search_combined(
-                    text=query,
-                    tags=tag_list,
-                    note_type=note_type_enum
+                    text=query, tags=tag_list, note_type=note_type_enum
                 )
-                
+
                 # Limit results
                 results = results[:limit]
                 if not results:
                     return "No matching notes found."
-                
+
                 # Format results
                 output = f"Found {len(results)} matching notes:\n\n"
                 for i, result in enumerate(results, 1):
                     note = result.note
                     output += f"{i}. {note.title} (ID: {note.id})\n"
                     if note.tags:
-                        output += f"   Tags: {', '.join(tag.name for tag in note.tags)}\n"
+                        output += (
+                            f"   Tags: {', '.join(tag.name for tag in note.tags)}\n"
+                        )
                     output += f"   Created: {note.created_at.strftime('%Y-%m-%d')}\n"
                     # Add a snippet of content (first 150 chars)
                     content_preview = note.content[:150].replace("\n", " ")
@@ -332,10 +344,7 @@ class ZettelkastenMcpServer:
 
         # Get linked notes
         @self.mcp.tool(name="zk_get_linked_notes")
-        def zk_get_linked_notes(
-            note_id: str,
-            direction: str = "both"
-        ) -> str:
+        def zk_get_linked_notes(note_id: str, direction: str = "both") -> str:
             """Get notes linked to/from a note.
             Args:
                 note_id: ID of the note
@@ -345,7 +354,9 @@ class ZettelkastenMcpServer:
                 if direction not in ["outgoing", "incoming", "both"]:
                     return f"Invalid direction: {direction}. Use 'outgoing', 'incoming', or 'both'."
                 # Get linked notes
-                linked_notes = self.zettel_service.get_linked_notes(str(note_id), direction)
+                linked_notes = self.zettel_service.get_linked_notes(
+                    str(note_id), direction
+                )
                 if not linked_notes:
                     return f"No {direction} links found for note {note_id}."
                 # Format results
@@ -353,23 +364,33 @@ class ZettelkastenMcpServer:
                 for i, note in enumerate(linked_notes, 1):
                     output += f"{i}. {note.title} (ID: {note.id})\n"
                     if note.tags:
-                        output += f"   Tags: {', '.join(tag.name for tag in note.tags)}\n"
+                        output += (
+                            f"   Tags: {', '.join(tag.name for tag in note.tags)}\n"
+                        )
                     # Try to determine link type
                     if direction in ["outgoing", "both"]:
                         # Check source note's outgoing links
                         source_note = self.zettel_service.get_note(str(note_id))
                         if source_note:
                             for link in source_note.links:
-                                if str(link.target_id) == str(note.id):  # Explicit string conversion for comparison
+                                if str(link.target_id) == str(
+                                    note.id
+                                ):  # Explicit string conversion for comparison
                                     output += f"   Link type: {link.link_type.value}\n"
                                     if link.description:
-                                        output += f"   Description: {link.description}\n"
+                                        output += (
+                                            f"   Description: {link.description}\n"
+                                        )
                                     break
                     if direction in ["incoming", "both"]:
                         # Check target note's outgoing links
                         for link in note.links:
-                            if str(link.target_id) == str(note_id):  # Explicit string conversion for comparison
-                                output += f"   Incoming link type: {link.link_type.value}\n"
+                            if str(link.target_id) == str(
+                                note_id
+                            ):  # Explicit string conversion for comparison
+                                output += (
+                                    f"   Incoming link type: {link.link_type.value}\n"
+                                )
                                 if link.description:
                                     output += f"   Description: {link.description}\n"
                                 break
@@ -377,6 +398,7 @@ class ZettelkastenMcpServer:
                 return output
             except Exception as e:
                 return self.format_error_response(e)
+
         self.zk_get_linked_notes = zk_get_linked_notes
 
         # Get all tags
@@ -387,7 +409,7 @@ class ZettelkastenMcpServer:
                 tags = self.zettel_service.get_all_tags()
                 if not tags:
                     return "No tags found in the Zettelkasten."
-                
+
                 # Format results
                 output = f"Found {len(tags)} tags:\n\n"
                 # Sort alphabetically
@@ -401,9 +423,7 @@ class ZettelkastenMcpServer:
         # Find similar notes
         @self.mcp.tool(name="zk_find_similar_notes")
         def zk_find_similar_notes(
-            note_id: str,
-            threshold: float = 0.3,
-            limit: int = 5
+            note_id: str, threshold: float = 0.3, limit: int = 5
         ) -> str:
             """Find notes similar to a given note.
             Args:
@@ -413,19 +433,23 @@ class ZettelkastenMcpServer:
             """
             try:
                 # Get similar notes
-                similar_notes = self.zettel_service.find_similar_notes(str(note_id), threshold)
+                similar_notes = self.zettel_service.find_similar_notes(
+                    str(note_id), threshold
+                )
                 # Limit results
                 similar_notes = similar_notes[:limit]
                 if not similar_notes:
                     return f"No similar notes found for {note_id} with threshold {threshold}."
-                
+
                 # Format results
                 output = f"Found {len(similar_notes)} similar notes for {note_id}:\n\n"
                 for i, (note, similarity) in enumerate(similar_notes, 1):
                     output += f"{i}. {note.title} (ID: {note.id})\n"
                     output += f"   Similarity: {similarity:.2f}\n"
                     if note.tags:
-                        output += f"   Tags: {', '.join(tag.name for tag in note.tags)}\n"
+                        output += (
+                            f"   Tags: {', '.join(tag.name for tag in note.tags)}\n"
+                        )
                     # Add a snippet of content (first 100 chars)
                     content_preview = note.content[:100].replace("\n", " ")
                     if len(note.content) > 100:
@@ -451,14 +475,16 @@ class ZettelkastenMcpServer:
                 central_notes = self.search_service.find_central_notes(limit)
                 if not central_notes:
                     return "No notes found with connections."
-                
+
                 # Format results
                 output = "Central notes in the Zettelkasten (most connected):\n\n"
                 for i, (note, connection_count) in enumerate(central_notes, 1):
                     output += f"{i}. {note.title} (ID: {note.id})\n"
                     output += f"   Connections: {connection_count}\n"
                     if note.tags:
-                        output += f"   Tags: {', '.join(tag.name for tag in note.tags)}\n"
+                        output += (
+                            f"   Tags: {', '.join(tag.name for tag in note.tags)}\n"
+                        )
                     # Add a snippet of content (first 100 chars)
                     content_preview = note.content[:100].replace("\n", " ")
                     if len(note.content) > 100:
@@ -477,13 +503,15 @@ class ZettelkastenMcpServer:
                 orphans = self.search_service.find_orphaned_notes()
                 if not orphans:
                     return "No orphaned notes found."
-                
+
                 # Format results
                 output = f"Found {len(orphans)} orphaned notes:\n\n"
                 for i, note in enumerate(orphans, 1):
                     output += f"{i}. {note.title} (ID: {note.id})\n"
                     if note.tags:
-                        output += f"   Tags: {', '.join(tag.name for tag in note.tags)}\n"
+                        output += (
+                            f"   Tags: {', '.join(tag.name for tag in note.tags)}\n"
+                        )
                     # Add a snippet of content (first 100 chars)
                     content_preview = note.content[:100].replace("\n", " ")
                     if len(note.content) > 100:
@@ -499,7 +527,7 @@ class ZettelkastenMcpServer:
             start_date: Optional[str] = None,
             end_date: Optional[str] = None,
             use_updated: bool = False,
-            limit: int = 10
+            limit: int = 10,
         ) -> str:
             """List notes created or updated within a date range.
             Args:
@@ -516,14 +544,14 @@ class ZettelkastenMcpServer:
                 end_datetime = None
                 if end_date:
                     end_datetime = datetime.fromisoformat(f"{end_date}T23:59:59")
-                
+
                 # Get notes
                 notes = self.search_service.find_notes_by_date_range(
                     start_date=start_datetime,
                     end_date=end_datetime,
-                    use_updated=use_updated
+                    use_updated=use_updated,
                 )
-                
+
                 # Limit results
                 notes = notes[:limit]
                 if not notes:
@@ -536,7 +564,7 @@ class ZettelkastenMcpServer:
                     elif end_date:
                         date_range = f" before {end_date}"
                     return f"No notes found {date_type}{date_range}."
-                
+
                 # Format results
                 date_type = "updated" if use_updated else "created"
                 output = f"Notes {date_type}"
@@ -553,7 +581,9 @@ class ZettelkastenMcpServer:
                     output += f"{i}. {note.title} (ID: {note.id})\n"
                     output += f"   {date_type.capitalize()}: {date.strftime('%Y-%m-%d %H:%M')}\n"
                     if note.tags:
-                        output += f"   Tags: {', '.join(tag.name for tag in note.tags)}\n"
+                        output += (
+                            f"   Tags: {', '.join(tag.name for tag in note.tags)}\n"
+                        )
                     # Add a snippet of content (first 100 chars)
                     content_preview = note.content[:100].replace("\n", " ")
                     if len(note.content) > 100:
@@ -574,13 +604,13 @@ class ZettelkastenMcpServer:
             try:
                 # Get count before rebuild
                 note_count_before = len(self.zettel_service.get_all_notes())
-                
+
                 # Perform the rebuild
                 self.zettel_service.rebuild_index()
-                
+
                 # Get count after rebuild
                 note_count_after = len(self.zettel_service.get_all_notes())
-                
+
                 # Return a detailed success message
                 return (
                     f"Database index rebuilt successfully.\n"
@@ -590,6 +620,353 @@ class ZettelkastenMcpServer:
             except Exception as e:
                 # Provide a detailed error message
                 logger.error(f"Failed to rebuild index: {e}", exc_info=True)
+                return self.format_error_response(e)
+
+        # ----------------------------------------------------------------
+        # Action-item tools (PARA / GTD)
+        # ----------------------------------------------------------------
+
+        @self.mcp.tool(name="zk_create_task")
+        def zk_create_task(
+            title: str,
+            content: str,
+            status: str = "inbox",
+            tags: Optional[str] = None,
+            project_id: Optional[str] = None,
+            due_date: Optional[str] = None,
+            priority: Optional[int] = None,
+            recurrence_rule: Optional[str] = None,
+            estimated_minutes: Optional[int] = None,
+            source: str = "manual",
+        ) -> str:
+            """Create a task note.
+            Args:
+                title: Task title
+                content: Task description
+                status: inbox, ready, active, waiting, someday, done, cancelled
+                tags: Comma-separated tags
+                project_id: ID of a project note to link this task to (PART_OF)
+                due_date: Due date in YYYY-MM-DD format
+                priority: 1 (low) to 4 (critical)
+                recurrence_rule: daily, weekly, monthly, quarterly, yearly
+                estimated_minutes: Estimated effort in minutes
+                source: manual, inbox, email, meeting, voice, import, recurring
+            """
+            try:
+                import datetime as _dt
+
+                try:
+                    task_status = TaskStatus(status.lower())
+                except ValueError:
+                    return f"Invalid status: {status}. Valid: {', '.join(s.value for s in TaskStatus)}"
+                try:
+                    note_source = NoteSource(source.lower())
+                except ValueError:
+                    return f"Invalid source: {source}. Valid: {', '.join(s.value for s in NoteSource)}"
+                parsed_due = None
+                if due_date:
+                    try:
+                        parsed_due = _dt.date.fromisoformat(due_date)
+                    except ValueError:
+                        return f"Invalid due_date: {due_date}. Use YYYY-MM-DD."
+                tag_list = (
+                    [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+                )
+                task = self.zettel_service.create_task(
+                    title=title,
+                    content=content,
+                    status=task_status,
+                    tags=tag_list,
+                    project_id=project_id,
+                    due_date=parsed_due,
+                    priority=priority,
+                    recurrence_rule=recurrence_rule,
+                    estimated_minutes=estimated_minutes,
+                    source=note_source,
+                )
+                return f"Task created successfully with ID: {task.id}"
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="zk_update_task_status")
+        def zk_update_task_status(task_id: str, status: str) -> str:
+            """Update the status of a task.
+            Args:
+                task_id: ID of the task note
+                status: inbox, ready, active, waiting, someday, done, cancelled
+            """
+            try:
+                try:
+                    new_status = TaskStatus(status.lower())
+                except ValueError:
+                    return f"Invalid status: {status}. Valid: {', '.join(s.value for s in TaskStatus)}"
+                updated = self.zettel_service.update_task_status(task_id, new_status)
+                msg = f"Task {task_id} status updated to '{new_status.value}'."
+                if new_status == TaskStatus.DONE and updated.recurrence_rule:
+                    msg += " New recurring instance created."
+                return msg
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="zk_get_tasks")
+        def zk_get_tasks(
+            status: Optional[str] = None,
+            project_id: Optional[str] = None,
+            due_date: Optional[str] = None,
+            overdue_only: bool = False,
+            priority: Optional[int] = None,
+            limit: int = 20,
+        ) -> str:
+            """Query tasks with optional filters.
+            Args:
+                status: Filter by status (inbox, ready, active, waiting, someday, done, cancelled)
+                project_id: Filter to tasks linked to this project
+                due_date: Filter to tasks due on or before this date (YYYY-MM-DD)
+                overdue_only: Only return tasks with due_date before today
+                priority: Filter by priority (1-4)
+                limit: Maximum results
+            """
+            try:
+                import datetime as _dt
+
+                task_status = None
+                if status:
+                    try:
+                        task_status = TaskStatus(status.lower())
+                    except ValueError:
+                        return f"Invalid status: {status}. Valid: {', '.join(s.value for s in TaskStatus)}"
+                due_before = None
+                if overdue_only:
+                    due_before = _dt.date.today() - _dt.timedelta(days=1)
+                elif due_date:
+                    try:
+                        due_before = _dt.date.fromisoformat(due_date)
+                    except ValueError:
+                        return f"Invalid due_date: {due_date}. Use YYYY-MM-DD."
+                tasks = self.zettel_service.get_tasks(
+                    status=task_status,
+                    project_id=project_id,
+                    due_date_before=due_before,
+                    priority=priority,
+                    limit=limit,
+                )
+                if not tasks:
+                    return "No matching tasks found."
+                out = f"Found {len(tasks)} task(s):\n\n"
+                for i, t in enumerate(tasks, 1):
+                    out += f"{i}. {t.title} (ID: {t.id})\n"
+                    out += f"   Status: {t.status.value if t.status else 'none'}"
+                    if t.due_date:
+                        out += f"  Due: {t.due_date}"
+                    if t.priority:
+                        out += f"  Priority: {t.priority}"
+                    out += "\n\n"
+                return out
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="zk_get_todays_tasks")
+        def zk_get_todays_tasks(include_overdue: bool = True) -> str:
+            """Return tasks due today and optionally overdue tasks.
+            Args:
+                include_overdue: Include tasks with past due dates (default: True)
+            """
+            try:
+                tasks = self.zettel_service.get_todays_tasks(include_overdue)
+                if not tasks:
+                    return "No tasks due today."
+                out = f"Today's tasks ({len(tasks)}):\n\n"
+                for i, t in enumerate(tasks, 1):
+                    priority_str = f" [P{t.priority}]" if t.priority else ""
+                    due_str = f" — due {t.due_date}" if t.due_date else ""
+                    out += f"{i}.{priority_str} {t.title}{due_str} (ID: {t.id})\n"
+                    out += f"   Status: {t.status.value if t.status else 'none'}\n\n"
+                return out
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="zk_create_project")
+        def zk_create_project(
+            title: str,
+            content: str,
+            outcome: Optional[str] = None,
+            deadline: Optional[str] = None,
+            tags: Optional[str] = None,
+        ) -> str:
+            """Create a project note.
+            Args:
+                title: Project title
+                content: Project description
+                outcome: The desired outcome/goal
+                deadline: Target completion date (YYYY-MM-DD)
+                tags: Comma-separated tags
+            """
+            try:
+                import datetime as _dt
+
+                parsed_deadline = None
+                if deadline:
+                    try:
+                        parsed_deadline = _dt.date.fromisoformat(deadline)
+                    except ValueError:
+                        return f"Invalid deadline: {deadline}. Use YYYY-MM-DD."
+                tag_list = (
+                    [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+                )
+                project = self.zettel_service.create_project_note(
+                    title=title,
+                    content=content,
+                    outcome=outcome,
+                    deadline=parsed_deadline,
+                    tags=tag_list,
+                )
+                return f"Project created successfully with ID: {project.id}"
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="zk_get_project")
+        def zk_get_project(project_id: str) -> str:
+            """Get a project note with a summary of its linked tasks by status.
+            Args:
+                project_id: ID of the project note
+            """
+            try:
+                project = self.zettel_service.get_note(project_id)
+                if not project:
+                    return f"Project not found: {project_id}"
+                if project.note_type != NoteType.PROJECT:
+                    return f"Note {project_id} is not a project (type: {project.note_type.value})"
+                tasks = self.zettel_service.get_project_tasks(project_id)
+                counts: dict = {}
+                for t in tasks:
+                    s = t.status.value if t.status else "none"
+                    counts[s] = counts.get(s, 0) + 1
+                outcome = project.metadata.get("outcome", "")
+                out = f"# {project.title}\n"
+                out += f"ID: {project.id}\n"
+                if outcome:
+                    out += f"Outcome: {outcome}\n"
+                out += f"Tasks: {len(tasks)} total"
+                if counts:
+                    out += " (" + ", ".join(f"{v} {k}" for k, v in counts.items()) + ")"
+                out += f"\n\n{project.content}\n"
+                return out
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="zk_get_project_tasks")
+        def zk_get_project_tasks(
+            project_id: str,
+            status: Optional[str] = None,
+            limit: int = 50,
+        ) -> str:
+            """Get all tasks linked to a project.
+            Args:
+                project_id: ID of the project note
+                status: Filter by status
+                limit: Maximum results
+            """
+            try:
+                task_status = None
+                if status:
+                    try:
+                        task_status = TaskStatus(status.lower())
+                    except ValueError:
+                        return f"Invalid status: {status}."
+                tasks = self.zettel_service.get_project_tasks(project_id, task_status)
+                tasks = tasks[:limit]
+                if not tasks:
+                    return f"No tasks found for project {project_id}."
+                out = f"Tasks for project {project_id} ({len(tasks)}):\n\n"
+                for i, t in enumerate(tasks, 1):
+                    out += f"{i}. {t.title} (ID: {t.id})\n"
+                    out += f"   Status: {t.status.value if t.status else 'none'}"
+                    if t.due_date:
+                        out += f"  Due: {t.due_date}"
+                    out += "\n\n"
+                return out
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="zk_create_area")
+        def zk_create_area(
+            title: str,
+            content: str,
+            cadence: Optional[str] = None,
+            tags: Optional[str] = None,
+        ) -> str:
+            """Create an area note (ongoing responsibility with no end date).
+            Args:
+                title: Area title
+                content: Area description
+                cadence: Review cadence (e.g. 'weekly review', 'monthly check-in')
+                tags: Comma-separated tags
+            """
+            try:
+                tag_list = (
+                    [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+                )
+                area = self.zettel_service.create_area_note(
+                    title=title, content=content, cadence=cadence, tags=tag_list
+                )
+                return f"Area created successfully with ID: {area.id}"
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="zk_list_projects")
+        def zk_list_projects(include_done: bool = False, limit: int = 20) -> str:
+            """List all project notes, sorted by due date.
+            Args:
+                include_done: Include completed/cancelled projects (default: False)
+                limit: Maximum results
+            """
+            try:
+                import datetime as _dt
+
+                projects = self.zettel_service.search_notes(note_type=NoteType.PROJECT)
+                if not include_done:
+                    projects = [
+                        p
+                        for p in projects
+                        if p.status not in (TaskStatus.DONE, TaskStatus.CANCELLED)
+                    ]
+                projects.sort(key=lambda p: (p.due_date or _dt.date.max))
+                projects = projects[:limit]
+                if not projects:
+                    return "No active projects found."
+                out = f"Projects ({len(projects)}):\n\n"
+                for i, p in enumerate(projects, 1):
+                    out += f"{i}. {p.title} (ID: {p.id})\n"
+                    if p.due_date:
+                        out += f"   Deadline: {p.due_date}\n"
+                    outcome = p.metadata.get("outcome", "")
+                    if outcome:
+                        out += f"   Outcome: {outcome}\n"
+                    out += "\n"
+                return out
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="zk_list_areas")
+        def zk_list_areas(limit: int = 20) -> str:
+            """List all area notes.
+            Args:
+                limit: Maximum results
+            """
+            try:
+                areas = self.zettel_service.search_notes(note_type=NoteType.AREA)
+                areas = areas[:limit]
+                if not areas:
+                    return "No areas found."
+                out = f"Areas ({len(areas)}):\n\n"
+                for i, a in enumerate(areas, 1):
+                    out += f"{i}. {a.title} (ID: {a.id})\n"
+                    cadence = a.metadata.get("cadence", "")
+                    if cadence:
+                        out += f"   Cadence: {cadence}\n"
+                    out += "\n"
+                return out
+            except Exception as e:
                 return self.format_error_response(e)
 
     def _register_resources(self) -> None:
