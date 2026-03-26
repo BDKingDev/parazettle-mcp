@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from zettelkasten_mcp.config import config
-from zettelkasten_mcp.models.db_models import Base
-from zettelkasten_mcp.services.zettel_service import ZettelService
-from zettelkasten_mcp.storage.note_repository import NoteRepository
+from parazettle_mcp.config import config
+from parazettle_mcp.models.db_models import Base
+from parazettle_mcp.services.zettel_service import ZettelService
+from parazettle_mcp.storage.note_repository import NoteRepository
 
 
 @pytest.fixture
