@@ -325,3 +325,62 @@ def test_rebuild_index_if_needed_detects_extra_file(note_repository):
     result = note_repository.get(saved.id)
     assert result is not None
     assert result.title == "Extra File Test"
+
+
+def test_metadata_round_trips_through_search(note_repository):
+    """Metadata stored in a note should survive the DB path returned by search()."""
+    note = Note(
+        title="Metadata Search Test",
+        content="Has custom metadata.",
+        metadata={"source_url": "https://example.com", "author": "test"},
+    )
+    note_repository.create(note)
+    results = note_repository.search(title="Metadata Search Test")
+    assert len(results) == 1
+    assert results[0].metadata == {"source_url": "https://example.com", "author": "test"}
+
+
+def test_metadata_round_trips_through_get_all(note_repository):
+    """Metadata stored in a note should survive the DB path returned by get_all()."""
+    note = Note(
+        title="Metadata GetAll Test",
+        content="Has custom metadata.",
+        metadata={"priority": 1, "project": "alpha"},
+    )
+    saved = note_repository.create(note)
+    all_notes = note_repository.get_all()
+    match = next((n for n in all_notes if n.id == saved.id), None)
+    assert match is not None
+    assert match.metadata == {"priority": 1, "project": "alpha"}
+
+
+def test_metadata_round_trips_through_find_linked_notes(note_repository):
+    """Metadata should be present on notes returned by find_linked_notes()."""
+    source = Note(title="Metadata Link Source", content="Source.")
+    target = Note(
+        title="Metadata Link Target",
+        content="Target with metadata.",
+        metadata={"reviewed": True},
+    )
+    saved_source = note_repository.create(source)
+    saved_target = note_repository.create(target)
+    saved_source.add_link(saved_target.id, LinkType.REFERENCE)
+    note_repository.update(saved_source)
+
+    linked = note_repository.find_linked_notes(saved_source.id, "outgoing")
+    assert len(linked) == 1
+    assert linked[0].metadata == {"reviewed": True}
+
+
+def test_note_without_metadata_returns_empty_dict(note_repository):
+    """Notes created without metadata should return {} from all DB-backed paths."""
+    note = Note(title="No Metadata", content="Plain note, no custom frontmatter.")
+    saved = note_repository.create(note)
+
+    search_result = note_repository.search(title="No Metadata")
+    assert search_result[0].metadata == {}
+
+    all_notes = note_repository.get_all()
+    match = next((n for n in all_notes if n.id == saved.id), None)
+    assert match is not None
+    assert match.metadata == {}
