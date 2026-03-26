@@ -1,6 +1,9 @@
 """Tests for the NoteRepository class."""
+
 import pytest
+
 from zettelkasten_mcp.models.schema import LinkType, Note, NoteType, Tag
+
 
 def test_create_note(note_repository):
     """Test creating a new note."""
@@ -9,7 +12,7 @@ def test_create_note(note_repository):
         title="Test Note",
         content="This is a test note.",
         note_type=NoteType.PERMANENT,
-        tags=[Tag(name="test"), Tag(name="example")]
+        tags=[Tag(name="test"), Tag(name="example")],
     )
     # Save to repository
     saved_note = note_repository.create(note)
@@ -21,6 +24,7 @@ def test_create_note(note_repository):
     assert len(saved_note.tags) == 2
     assert {tag.name for tag in saved_note.tags} == {"test", "example"}
 
+
 def test_get_note(note_repository):
     """Test retrieving a note."""
     # Create a test note
@@ -28,7 +32,7 @@ def test_get_note(note_repository):
         title="Get Test Note",
         content="This is a test note for retrieval.",
         note_type=NoteType.PERMANENT,
-        tags=[Tag(name="test"), Tag(name="get")]
+        tags=[Tag(name="test"), Tag(name="get")],
     )
     # Save to repository
     saved_note = note_repository.create(note)
@@ -45,6 +49,7 @@ def test_get_note(note_repository):
     assert len(retrieved_note.tags) == 2
     assert {tag.name for tag in retrieved_note.tags} == {"test", "get"}
 
+
 def test_update_note(note_repository):
     """Test updating a note."""
     # Create a test note
@@ -52,7 +57,7 @@ def test_update_note(note_repository):
         title="Update Test Note",
         content="This is a test note for updating.",
         note_type=NoteType.PERMANENT,
-        tags=[Tag(name="test"), Tag(name="update")]
+        tags=[Tag(name="test"), Tag(name="update")],
     )
     # Save to repository
     saved_note = note_repository.create(note)
@@ -73,6 +78,7 @@ def test_update_note(note_repository):
     assert retrieved_note.content.strip() == expected_content.strip()
     assert {tag.name for tag in retrieved_note.tags} == {"test", "updated"}
 
+
 def test_delete_note(note_repository):
     """Test deleting a note."""
     # Create a test note
@@ -80,7 +86,7 @@ def test_delete_note(note_repository):
         title="Delete Test Note",
         content="This is a test note for deletion.",
         note_type=NoteType.PERMANENT,
-        tags=[Tag(name="test"), Tag(name="delete")]
+        tags=[Tag(name="test"), Tag(name="delete")],
     )
     # Save to repository
     saved_note = note_repository.create(note)
@@ -93,6 +99,7 @@ def test_delete_note(note_repository):
     deleted_note = note_repository.get(saved_note.id)
     assert deleted_note is None
 
+
 def test_search_notes(note_repository):
     """Test searching for notes."""
     # Create test notes
@@ -100,46 +107,47 @@ def test_search_notes(note_repository):
         title="Python Programming",
         content="Python is a versatile programming language.",
         note_type=NoteType.PERMANENT,
-        tags=[Tag(name="python"), Tag(name="programming")]
+        tags=[Tag(name="python"), Tag(name="programming")],
     )
     note2 = Note(
         title="JavaScript Basics",
         content="JavaScript is used for web development.",
         note_type=NoteType.PERMANENT,
-        tags=[Tag(name="javascript"), Tag(name="programming")]
+        tags=[Tag(name="javascript"), Tag(name="programming")],
     )
     note3 = Note(
         title="Data Science Overview",
         content="Data science uses Python for data analysis.",
         note_type=NoteType.STRUCTURE,
-        tags=[Tag(name="data science"), Tag(name="python")]
+        tags=[Tag(name="data science"), Tag(name="python")],
     )
     # Save notes
     saved_note1 = note_repository.create(note1)
     saved_note2 = note_repository.create(note2)
     saved_note3 = note_repository.create(note3)
-    
+
     # Search by content with title included (since content has the title prepended)
     python_notes = note_repository.search(content="Python")
     # We should find both the Python notes even with title prepended
     assert len(python_notes) >= 1  # At least one match
     python_ids = {note.id for note in python_notes}
     assert saved_note1.id in python_ids or saved_note3.id in python_ids
-    
+
     # Search by title
     javascript_notes = note_repository.search(title="JavaScript")
     assert len(javascript_notes) == 1
     assert javascript_notes[0].id == saved_note2.id
-    
+
     # Search by note_type
     structure_notes = note_repository.search(note_type=NoteType.STRUCTURE)
     assert len(structure_notes) == 1
     assert structure_notes[0].id == saved_note3.id
-    
+
     # Search by tag
     programming_notes = note_repository.find_by_tag("programming")
     assert len(programming_notes) == 2
     assert {note.id for note in programming_notes} == {saved_note1.id, saved_note2.id}
+
 
 def test_note_linking(note_repository):
     """Test creating links between notes."""
@@ -148,13 +156,13 @@ def test_note_linking(note_repository):
         title="Source Note",
         content="This is the source note.",
         note_type=NoteType.PERMANENT,
-        tags=[Tag(name="test"), Tag(name="source")]
+        tags=[Tag(name="test"), Tag(name="source")],
     )
     note2 = Note(
         title="Target Note",
         content="This is the target note.",
         note_type=NoteType.PERMANENT,
-        tags=[Tag(name="test"), Tag(name="target")]
+        tags=[Tag(name="test"), Tag(name="target")],
     )
     # Save notes
     source_note = note_repository.create(note1)
@@ -163,7 +171,7 @@ def test_note_linking(note_repository):
     source_note.add_link(
         target_id=target_note.id,
         link_type=LinkType.REFERENCE,
-        description="A test link"
+        description="A test link",
     )
     # Update the source note
     updated_source = note_repository.update(source_note)
@@ -176,3 +184,144 @@ def test_note_linking(note_repository):
     linked_notes = note_repository.find_linked_notes(source_note.id, "outgoing")
     assert len(linked_notes) == 1
     assert linked_notes[0].id == target_note.id
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 data layer tests
+# ---------------------------------------------------------------------------
+
+
+def test_wal_mode_enabled(note_repository):
+    """Database should be set to WAL journal mode after init."""
+    from sqlalchemy import text
+
+    with note_repository.session_factory() as session:
+        row = session.execute(text("PRAGMA journal_mode")).fetchone()
+    assert row[0] == "wal"
+
+
+def test_create_leaves_no_tmp_file(note_repository):
+    """Atomic write: no .md.tmp file should remain after create()."""
+    note = Note(title="Atomic Create", content="Test atomic write.")
+    saved = note_repository.create(note)
+    tmp = note_repository.notes_dir / f"{saved.id}.md.tmp"
+    assert not tmp.exists()
+
+
+def test_update_leaves_no_tmp_file(note_repository):
+    """Atomic write: no .md.tmp file should remain after update()."""
+    note = Note(title="Atomic Update", content="Original content.")
+    saved = note_repository.create(note)
+    saved.content = "Updated content."
+    note_repository.update(saved)
+    tmp = note_repository.notes_dir / f"{saved.id}.md.tmp"
+    assert not tmp.exists()
+
+
+def test_cache_hit_after_get(note_repository):
+    """Second get() for the same ID should return a result (cache hit path)."""
+    note = Note(title="Cache Hit", content="Should be cached.")
+    saved = note_repository.create(note)
+    first = note_repository.get(saved.id)
+    second = note_repository.get(saved.id)
+    assert first is not None
+    assert second is not None
+    assert first.id == second.id
+    assert first.title == second.title
+
+
+def test_cache_invalidated_on_update(note_repository):
+    """After update(), get() should return the new content, not a stale cache entry."""
+    note = Note(title="Cache Invalidation", content="Original.")
+    saved = note_repository.create(note)
+    # Prime the cache
+    note_repository.get(saved.id)
+    # Mutate and update
+    saved.title = "Cache Invalidation Updated"
+    note_repository.update(saved)
+    fresh = note_repository.get(saved.id)
+    assert fresh is not None
+    assert fresh.title == "Cache Invalidation Updated"
+
+
+def test_cache_invalidated_on_delete(note_repository):
+    """After delete(), get() should return None, not a stale cache entry."""
+    note = Note(title="Cache Delete", content="Will be deleted.")
+    saved = note_repository.create(note)
+    # Prime the cache
+    note_repository.get(saved.id)
+    # Delete and verify cache is gone
+    note_repository.delete(saved.id)
+    result = note_repository.get(saved.id)
+    assert result is None
+
+
+def test_search_returns_correct_content_and_tags(note_repository):
+    """search() reconstructs notes from DB rows — content, tags, and type must match."""
+    note = Note(
+        title="Search DB Reconstruction",
+        content="Verifying DB-backed search.",
+        note_type=NoteType.LITERATURE,
+        tags=[Tag(name="search"), Tag(name="db")],
+    )
+    note_repository.create(note)
+    results = note_repository.search(title="Search DB Reconstruction")
+    assert len(results) == 1
+    result = results[0]
+    assert result.note_type == NoteType.LITERATURE
+    assert {t.name for t in result.tags} == {"search", "db"}
+    assert "Verifying DB-backed search." in result.content
+
+
+def test_search_returns_links(note_repository):
+    """search() via _note_from_db() should include outgoing links."""
+    source = Note(title="Search Link Source", content="Source note.")
+    target = Note(title="Search Link Target", content="Target note.")
+    saved_source = note_repository.create(source)
+    saved_target = note_repository.create(target)
+    saved_source.add_link(saved_target.id, LinkType.REFERENCE)
+    note_repository.update(saved_source)
+
+    results = note_repository.search(title="Search Link Source")
+    assert len(results) == 1
+    assert any(lnk.target_id == saved_target.id for lnk in results[0].links)
+
+
+def test_rebuild_index_if_needed_detects_missing_file(note_repository):
+    """rebuild_index_if_needed() should trigger rebuild when a file is gone but DB has it."""
+    import os
+
+    note = Note(title="Rebuild Test", content="Will be orphaned in DB.")
+    saved = note_repository.create(note)
+    # Remove the file but leave the DB entry
+    file_path = note_repository.notes_dir / f"{saved.id}.md"
+    os.remove(file_path)
+    # Should detect mismatch and rebuild (DB entry removed)
+    note_repository.rebuild_index_if_needed()
+    # After rebuild the note should not be in the DB
+    result = note_repository.get(saved.id)
+    assert result is None
+
+
+def test_rebuild_index_if_needed_detects_extra_file(note_repository):
+    """rebuild_index_if_needed() should trigger rebuild when a file exists but DB lacks it."""
+    note = Note(title="Extra File Test", content="Exists on disk only.")
+    saved = note_repository.create(note)
+    # Manually delete from DB but leave file
+    from sqlalchemy import text
+
+    with note_repository.session_factory() as session:
+        session.execute(
+            text("DELETE FROM links WHERE source_id = :id OR target_id = :id"),
+            {"id": saved.id},
+        )
+        session.execute(
+            text("DELETE FROM note_tags WHERE note_id = :id"), {"id": saved.id}
+        )
+        session.execute(text("DELETE FROM notes WHERE id = :id"), {"id": saved.id})
+        session.commit()
+    # Should detect mismatch and rebuild (DB re-indexed from file)
+    note_repository.rebuild_index_if_needed()
+    result = note_repository.get(saved.id)
+    assert result is not None
+    assert result.title == "Extra File Test"

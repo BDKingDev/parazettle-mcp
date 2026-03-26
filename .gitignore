@@ -57,4 +57,6 @@ repomix-output.xml
 
 # Data files
 data/db/*.db
+data/db/*.db-wal
+data/db/*.db-shm
 data/notes/*.md
