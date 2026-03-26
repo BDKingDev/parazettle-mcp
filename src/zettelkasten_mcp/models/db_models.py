@@ -15,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
 )
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, Session, declarative_base, relationship, sessionmaker
 
 from zettelkasten_mcp.config import config

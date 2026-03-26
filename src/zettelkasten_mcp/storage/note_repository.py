@@ -10,11 +10,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
 import frontmatter
-from sqlalchemy import and_, func, or_, select, text
-from sqlalchemy.orm import joinedload
+from sqlalchemy import and_, create_engine, func, or_, select, text
+from sqlalchemy.orm import Session, joinedload
 
 from zettelkasten_mcp.config import config
 from zettelkasten_mcp.models.db_models import (
+    Base,
     DBLink,
     DBNote,
     DBTag,
@@ -455,7 +456,7 @@ class NoteRepository(Repository[Note]):
                     f.write(markdown)
                 tmp_path.replace(file_path)
         except IOError as e:
-            raise IOError(f"Failed to write note to {file_path}: {e}")
+            raise IOError(f"Failed to write note to {file_path}: {e}") from e
         finally:
             if tmp_path.exists():
                 try:
@@ -492,7 +493,7 @@ class NoteRepository(Repository[Note]):
             _cache_put(path_str, mtime_ns, note)
             return note.model_copy(deep=True)
         except Exception as e:
-            raise IOError(f"Failed to read note {id}: {e}")
+            raise IOError(f"Failed to read note {id}: {e}") from e
 
     def get_by_title(self, title: str) -> Optional[Note]:
         """Get a note by title."""
@@ -539,7 +540,7 @@ class NoteRepository(Repository[Note]):
                     f.write(markdown)
                 tmp_path.replace(file_path)
         except IOError as e:
-            raise IOError(f"Failed to write note to {file_path}: {e}")
+            raise IOError(f"Failed to write note to {file_path}: {e}") from e
         finally:
             if tmp_path.exists():
                 try:
@@ -620,7 +621,7 @@ class NoteRepository(Repository[Note]):
             with self.file_lock:
                 os.remove(file_path)
         except IOError as e:
-            raise IOError(f"Failed to delete note {id}: {e}")
+            raise IOError(f"Failed to delete note {id}: {e}") from e
 
         _cache_evict(str(file_path))
         # Delete from database
