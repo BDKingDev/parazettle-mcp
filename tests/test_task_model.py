@@ -8,9 +8,9 @@ from zettelkasten_mcp.models.schema import (
     LinkType,
     Note,
     NoteSource,
+    NoteStatus,
     NoteType,
     Tag,
-    TaskStatus,
 )
 
 # ---------------------------------------------------------------------------
@@ -19,14 +19,17 @@ from zettelkasten_mcp.models.schema import (
 
 
 def test_task_status_values():
-    """TaskStatus enum has the expected values."""
-    assert TaskStatus.INBOX.value == "inbox"
-    assert TaskStatus.READY.value == "ready"
-    assert TaskStatus.ACTIVE.value == "active"
-    assert TaskStatus.WAITING.value == "waiting"
-    assert TaskStatus.SOMEDAY.value == "someday"
-    assert TaskStatus.DONE.value == "done"
-    assert TaskStatus.CANCELLED.value == "cancelled"
+    """NoteStatus enum has all expected values."""
+    assert NoteStatus.INBOX.value == "inbox"
+    assert NoteStatus.READY.value == "ready"
+    assert NoteStatus.ACTIVE.value == "active"
+    assert NoteStatus.WAITING.value == "waiting"
+    assert NoteStatus.SCHEDULED.value == "scheduled"
+    assert NoteStatus.SOMEDAY.value == "someday"
+    assert NoteStatus.DONE.value == "done"
+    assert NoteStatus.CANCELLED.value == "cancelled"
+    assert NoteStatus.ARCHIVED.value == "archived"
+    assert NoteStatus.EVERGREEN.value == "evergreen"
 
 
 def test_note_source_values():
@@ -62,7 +65,7 @@ def test_task_note_creation():
         title="Write tests",
         content="Cover all new service methods.",
         note_type=NoteType.TASK,
-        status=TaskStatus.READY,
+        status=NoteStatus.READY,
         source=NoteSource.MANUAL,
         due_date=datetime.date(2026, 4, 1),
         priority=2,
@@ -70,7 +73,7 @@ def test_task_note_creation():
         estimated_minutes=30,
     )
     assert note.note_type == NoteType.TASK
-    assert note.status == TaskStatus.READY
+    assert note.status == NoteStatus.READY
     assert note.source == NoteSource.MANUAL
     assert note.due_date == datetime.date(2026, 4, 1)
     assert note.priority == 2
@@ -100,7 +103,7 @@ def test_task_fields_round_trip_through_frontmatter(note_repository):
         title="Frontmatter Round-trip",
         content="Task body.",
         note_type=NoteType.TASK,
-        status=TaskStatus.ACTIVE,
+        status=NoteStatus.ACTIVE,
         source=NoteSource.EMAIL,
         due_date=datetime.date(2026, 5, 10),
         priority=3,
@@ -111,7 +114,7 @@ def test_task_fields_round_trip_through_frontmatter(note_repository):
     retrieved = note_repository.get(saved.id)
     assert retrieved is not None
     assert retrieved.note_type == NoteType.TASK
-    assert retrieved.status == TaskStatus.ACTIVE
+    assert retrieved.status == NoteStatus.ACTIVE
     assert retrieved.source == NoteSource.EMAIL
     assert retrieved.due_date == datetime.date(2026, 5, 10)
     assert retrieved.priority == 3
@@ -138,13 +141,53 @@ def test_knowledge_note_unchanged_after_schema_change(note_repository):
 
 def test_inbox_status_is_first_triage_state():
     """INBOX is a distinct state from READY — it means 'captured, not yet triaged'."""
-    inbox_note = Note(title="Capture", content="Raw idea.", status=TaskStatus.INBOX)
+    inbox_note = Note(title="Capture", content="Raw idea.", status=NoteStatus.INBOX)
     ready_note = Note(
-        title="Triaged", content="Decided to do.", status=TaskStatus.READY
+        title="Triaged", content="Decided to do.", status=NoteStatus.READY
     )
     assert inbox_note.status != ready_note.status
-    assert inbox_note.status == TaskStatus.INBOX
-    assert ready_note.status == TaskStatus.READY
+    assert inbox_note.status == NoteStatus.INBOX
+    assert ready_note.status == NoteStatus.READY
+
+
+def test_note_source_extended_values():
+    """NoteSource includes new source types from Phase 3."""
+    assert NoteSource.TRANSCRIPT.value == "transcript"
+    assert NoteSource.BOOK.value == "book"
+    assert NoteSource.ARTICLE.value == "article"
+    assert NoteSource.CHAT.value == "chat"
+    assert NoteSource.WEB.value == "web"
+    assert NoteSource.PDF.value == "pdf"
+
+
+def test_remind_at_round_trips_through_frontmatter(note_repository):
+    """remind_at field survives _note_to_markdown / _parse_note_from_markdown."""
+    remind = datetime.date(2026, 8, 15)
+    note = Note(title="Remind Me", content="Check this later.", remind_at=remind)
+    saved = note_repository.create(note)
+    retrieved = note_repository.get(saved.id)
+    assert retrieved is not None
+    assert retrieved.remind_at == remind
+
+
+def test_project_id_and_area_id_round_trip(note_repository):
+    """project_id and area_id survive frontmatter and DB round-trip."""
+    note = Note(
+        title="PARA Routing Test",
+        content=".",
+        project_id="proj-123",
+        area_id="area-456",
+    )
+    saved = note_repository.create(note)
+    retrieved = note_repository.get(saved.id)
+    assert retrieved.project_id == "proj-123"
+    assert retrieved.area_id == "area-456"
+
+    # Also verify DB-backed path (search)
+    results = note_repository.search(title="PARA Routing Test")
+    assert len(results) == 1
+    assert results[0].project_id == "proj-123"
+    assert results[0].area_id == "area-456"
 
 
 def test_new_link_types_have_inverses(zettel_service):

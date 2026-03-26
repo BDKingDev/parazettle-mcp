@@ -11,9 +11,9 @@ from zettelkasten_mcp.models.schema import (
     LinkType,
     Note,
     NoteSource,
+    NoteStatus,
     NoteType,
     Tag,
-    TaskStatus,
 )
 from zettelkasten_mcp.storage.note_repository import NoteRepository
 
@@ -336,16 +336,30 @@ class ZettelService:
         self,
         title: str,
         content: str,
-        status: TaskStatus = TaskStatus.INBOX,
+        status: NoteStatus = NoteStatus.INBOX,
         tags: Optional[List[str]] = None,
         project_id: Optional[str] = None,
+        area_id: Optional[str] = None,
         due_date: Optional[datetime.date] = None,
         priority: Optional[int] = None,
         recurrence_rule: Optional[str] = None,
         estimated_minutes: Optional[int] = None,
+        remind_at: Optional[datetime.date] = None,
         source: NoteSource = NoteSource.MANUAL,
     ) -> Note:
-        """Create a task note with optional link to a project."""
+        """Create a task note.
+
+        project_id is required. area_id is auto-filled from the project if not provided.
+        """
+        if not project_id:
+            raise ValueError(
+                "Tasks must be associated with a project (project_id required)"
+            )
+        # Auto-fill area_id from project if not provided
+        if not area_id:
+            project = self.repository.get(project_id)
+            if project and project.area_id:
+                area_id = project.area_id
         task = Note(
             title=title,
             content=content,
@@ -357,13 +371,15 @@ class ZettelService:
             priority=priority,
             recurrence_rule=recurrence_rule,
             estimated_minutes=estimated_minutes,
+            remind_at=remind_at,
+            project_id=project_id,
+            area_id=area_id,
         )
         task = self.repository.create(task)
-        if project_id:
-            self.create_link(task.id, project_id, LinkType.PART_OF, bidirectional=True)
+        self.create_link(task.id, project_id, LinkType.PART_OF, bidirectional=True)
         return task
 
-    def update_task_status(self, note_id: str, new_status: TaskStatus) -> Note:
+    def update_task_status(self, note_id: str, new_status: NoteStatus) -> Note:
         """Update the status of a task. Spawns a new task when a recurring one is completed."""
         note = self.repository.get(note_id)
         if not note:
@@ -375,7 +391,7 @@ class ZettelService:
         note.status = new_status
         note.updated_at = datetime.datetime.now()
         updated = self.repository.update(note)
-        if new_status == TaskStatus.DONE and note.recurrence_rule:
+        if new_status == NoteStatus.DONE and note.recurrence_rule:
             self._spawn_recurring_task(updated)
         return updated
 
@@ -398,7 +414,7 @@ class ZettelService:
             content=done_note.content,
             note_type=NoteType.TASK,
             tags=list(done_note.tags),
-            status=TaskStatus.READY,
+            status=NoteStatus.READY,
             source=NoteSource.RECURRING,
             due_date=next_due,
             priority=done_note.priority,
@@ -412,7 +428,7 @@ class ZettelService:
 
     def get_tasks(
         self,
-        status: Optional[TaskStatus] = None,
+        status: Optional[NoteStatus] = None,
         project_id: Optional[str] = None,
         due_date_before: Optional[datetime.date] = None,
         due_date_after: Optional[datetime.date] = None,
@@ -448,10 +464,11 @@ class ZettelService:
             due_date_before=cutoff,
         )
         active_statuses = {
-            TaskStatus.INBOX,
-            TaskStatus.READY,
-            TaskStatus.ACTIVE,
-            TaskStatus.WAITING,
+            NoteStatus.INBOX,
+            NoteStatus.READY,
+            NoteStatus.ACTIVE,
+            NoteStatus.WAITING,
+            NoteStatus.SCHEDULED,
         }
         tasks = [t for t in tasks if t.status in active_statuses]
         tasks.sort(
@@ -468,22 +485,29 @@ class ZettelService:
         content: str,
         outcome: Optional[str] = None,
         deadline: Optional[datetime.date] = None,
+        area_id: Optional[str] = None,
         tags: Optional[List[str]] = None,
     ) -> Note:
-        """Create a PROJECT-type note."""
+        """Create a PROJECT-type note, optionally linked to an area."""
         metadata: Dict[str, Any] = {}
         if outcome:
             metadata["outcome"] = outcome
-        return self.create_note(
+        project = Note(
             title=title,
             content=content,
             note_type=NoteType.PROJECT,
-            tags=tags,
+            tags=[Tag(name=t) for t in (tags or [])],
             metadata=metadata,
+            due_date=deadline,
+            area_id=area_id,
         )
+        project = self.repository.create(project)
+        if area_id:
+            self.create_link(project.id, area_id, LinkType.PART_OF, bidirectional=True)
+        return project
 
     def get_project_tasks(
-        self, project_id: str, status: Optional[TaskStatus] = None
+        self, project_id: str, status: Optional[NoteStatus] = None
     ) -> List[Note]:
         """Return all tasks linked PART_OF a project."""
         linked = self.repository.find_linked_notes(project_id, "outgoing")
@@ -510,3 +534,10 @@ class ZettelService:
             tags=tags,
             metadata=metadata,
         )
+
+    def get_reminders(self, limit: int = 20) -> List[Note]:
+        """Return notes/tasks with remind_at <= today, sorted by remind_at ASC."""
+        today = datetime.date.today()
+        notes = self.repository.search(remind_at_before=today)
+        notes.sort(key=lambda n: (n.remind_at or datetime.date.min))
+        return notes[:limit]

@@ -27,9 +27,9 @@ from zettelkasten_mcp.models.schema import (
     LinkType,
     Note,
     NoteSource,
+    NoteStatus,
     NoteType,
     Tag,
-    TaskStatus,
 )
 from zettelkasten_mcp.storage.base import Repository
 
@@ -270,10 +270,13 @@ class NoteRepository(Repository[Note]):
             "priority",
             "recurrence_rule",
             "estimated_minutes",
+            "remind_at",
+            "project_id",
+            "area_id",
         }
 
         status_str = metadata.get("status")
-        status = TaskStatus(status_str) if status_str else None
+        status = NoteStatus(status_str) if status_str else None
 
         source_str = metadata.get("source", NoteSource.MANUAL.value)
         try:
@@ -286,9 +289,16 @@ class NoteRepository(Repository[Note]):
             datetime.date.fromisoformat(str(due_date_str)) if due_date_str else None
         )
 
+        remind_at_str = metadata.get("remind_at")
+        remind_at = (
+            datetime.date.fromisoformat(str(remind_at_str)) if remind_at_str else None
+        )
+
         priority = metadata.get("priority")
         recurrence_rule = metadata.get("recurrence_rule") or None
         estimated_minutes = metadata.get("estimated_minutes")
+        project_id = metadata.get("project_id") or None
+        area_id = metadata.get("area_id") or None
 
         # Create note object
         return Note(
@@ -307,6 +317,9 @@ class NoteRepository(Repository[Note]):
             priority=priority,
             recurrence_rule=recurrence_rule,
             estimated_minutes=estimated_minutes,
+            remind_at=remind_at,
+            project_id=project_id,
+            area_id=area_id,
         )
 
     def _index_note(self, note: Note, rendered_content: Optional[str] = None) -> None:
@@ -337,6 +350,9 @@ class NoteRepository(Repository[Note]):
                 priority=note.priority,
                 recurrence_rule=note.recurrence_rule,
                 estimated_minutes=note.estimated_minutes,
+                remind_at=note.remind_at,
+                project_id=note.project_id,
+                area_id=note.area_id,
             )
             if db_note:
                 # Update existing note
@@ -428,6 +444,12 @@ class NoteRepository(Repository[Note]):
             metadata["recurrence_rule"] = note.recurrence_rule
         if note.estimated_minutes is not None:
             metadata["estimated_minutes"] = note.estimated_minutes
+        if note.remind_at is not None:
+            metadata["remind_at"] = note.remind_at.isoformat()
+        if note.project_id is not None:
+            metadata["project_id"] = note.project_id
+        if note.area_id is not None:
+            metadata["area_id"] = note.area_id
         # Add any custom metadata
         metadata.update(note.metadata)
 
@@ -502,12 +524,15 @@ class NoteRepository(Repository[Note]):
             created_at=db_note.created_at,
             updated_at=db_note.updated_at,
             metadata=metadata,
-            status=TaskStatus(db_note.status) if db_note.status else None,
+            status=NoteStatus(db_note.status) if db_note.status else None,
             source=NoteSource(db_note.source) if db_note.source else NoteSource.MANUAL,
             due_date=db_note.due_date,
             priority=db_note.priority,
             recurrence_rule=db_note.recurrence_rule,
             estimated_minutes=db_note.estimated_minutes,
+            remind_at=db_note.remind_at,
+            project_id=db_note.project_id,
+            area_id=db_note.area_id,
         )
 
     def create(self, note: Note) -> Note:
@@ -648,6 +673,9 @@ class NoteRepository(Repository[Note]):
                     db_note.priority = note.priority
                     db_note.recurrence_rule = note.recurrence_rule
                     db_note.estimated_minutes = note.estimated_minutes
+                    db_note.remind_at = note.remind_at
+                    db_note.project_id = note.project_id
+                    db_note.area_id = note.area_id
 
                     # Clear existing tags
                     db_note.tags = []
@@ -780,7 +808,7 @@ class NoteRepository(Repository[Note]):
             if "status" in kwargs:
                 sv = kwargs["status"]
                 query = query.where(
-                    DBNote.status == (sv.value if isinstance(sv, TaskStatus) else sv)
+                    DBNote.status == (sv.value if isinstance(sv, NoteStatus) else sv)
                 )
             if "source" in kwargs:
                 src = kwargs["source"]
@@ -793,6 +821,14 @@ class NoteRepository(Repository[Note]):
                 query = query.where(DBNote.due_date >= kwargs["due_date_after"])
             if "priority" in kwargs:
                 query = query.where(DBNote.priority == kwargs["priority"])
+            if "remind_at_before" in kwargs:
+                query = query.where(DBNote.remind_at <= kwargs["remind_at_before"])
+            if "remind_at_after" in kwargs:
+                query = query.where(DBNote.remind_at >= kwargs["remind_at_after"])
+            if "project_id" in kwargs:
+                query = query.where(DBNote.project_id == kwargs["project_id"])
+            if "area_id" in kwargs:
+                query = query.where(DBNote.area_id == kwargs["area_id"])
             # Execute query and apply unique() to handle duplicates from joins
             result = session.execute(query)
             db_notes = result.unique().scalars().all()

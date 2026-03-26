@@ -54,6 +54,9 @@ class DBNote(Base):
     priority = Column(Integer, nullable=True)
     recurrence_rule = Column(String(255), nullable=True)
     estimated_minutes = Column(Integer, nullable=True)
+    remind_at = Column(Date, nullable=True, index=True)
+    project_id = Column(String(255), nullable=True, index=True)
+    area_id = Column(String(255), nullable=True, index=True)
 
     # Relationships
     tags = relationship("DBTag", secondary=note_tags, back_populates="notes")
@@ -156,6 +159,9 @@ def init_db() -> Engine:
             ("priority", "INTEGER"),
             ("recurrence_rule", "VARCHAR(255)"),
             ("estimated_minutes", "INTEGER"),
+            ("remind_at", "DATE"),
+            ("project_id", "VARCHAR(255)"),
+            ("area_id", "VARCHAR(255)"),
         ]
         for col_name, col_type in new_cols:
             if col_name not in existing:

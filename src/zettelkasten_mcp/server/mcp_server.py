@@ -13,9 +13,9 @@ from zettelkasten_mcp.models.schema import (
     LinkType,
     Note,
     NoteSource,
+    NoteStatus,
     NoteType,
     Tag,
-    TaskStatus,
 )
 from zettelkasten_mcp.services.search_service import SearchService
 from zettelkasten_mcp.services.zettel_service import ZettelService
@@ -76,8 +76,8 @@ class ZettelkastenMcpServer:
         """Register MCP tools."""
 
         # Create a new note
-        @self.mcp.tool(name="zk_create_note")
-        def zk_create_note(
+        @self.mcp.tool(name="pzk_create_note")
+        def pzk_create_note(
             title: str,
             content: str,
             note_type: str = "permanent",
@@ -117,8 +117,8 @@ class ZettelkastenMcpServer:
                 return self.format_error_response(e)
 
         # Get a note by ID or title
-        @self.mcp.tool(name="zk_get_note")
-        def zk_get_note(identifier: str) -> str:
+        @self.mcp.tool(name="pzk_get_note")
+        def pzk_get_note(identifier: str) -> str:
             """Retrieve a note by ID or title.
             Args:
                 identifier: The ID or title of the note
@@ -148,8 +148,8 @@ class ZettelkastenMcpServer:
                 return self.format_error_response(e)
 
         # Update a note
-        @self.mcp.tool(name="zk_update_note")
-        def zk_update_note(
+        @self.mcp.tool(name="pzk_update_note")
+        def pzk_update_note(
             note_id: str,
             title: Optional[str] = None,
             content: Optional[str] = None,
@@ -196,8 +196,8 @@ class ZettelkastenMcpServer:
                 return self.format_error_response(e)
 
         # Delete a note
-        @self.mcp.tool(name="zk_delete_note")
-        def zk_delete_note(note_id: str) -> str:
+        @self.mcp.tool(name="pzk_delete_note")
+        def pzk_delete_note(note_id: str) -> str:
             """Delete a note.
             Args:
                 note_id: The ID of the note to delete
@@ -215,8 +215,8 @@ class ZettelkastenMcpServer:
                 return self.format_error_response(e)
 
         # Add a link between notes
-        @self.mcp.tool(name="zk_create_link")
-        def zk_create_link(
+        @self.mcp.tool(name="pzk_create_link")
+        def pzk_create_link(
             source_id: str,
             target_id: str,
             link_type: str = "reference",
@@ -257,11 +257,11 @@ class ZettelkastenMcpServer:
                     return f"A link of this type already exists between these notes. Try a different link type."
                 return self.format_error_response(e)
 
-        self.zk_create_link = zk_create_link
+        self.pzk_create_link = pzk_create_link
 
         # Remove a link between notes
-        @self.mcp.tool(name="zk_remove_link")
-        def zk_remove_link(
+        @self.mcp.tool(name="pzk_remove_link")
+        def pzk_remove_link(
             source_id: str, target_id: str, bidirectional: bool = False
         ) -> str:
             """Remove a link between two notes.
@@ -285,8 +285,8 @@ class ZettelkastenMcpServer:
                 return self.format_error_response(e)
 
         # Search for notes
-        @self.mcp.tool(name="zk_search_notes")
-        def zk_search_notes(
+        @self.mcp.tool(name="pzk_search_notes")
+        def pzk_search_notes(
             query: Optional[str] = None,
             tags: Optional[str] = None,
             note_type: Optional[str] = None,
@@ -343,8 +343,8 @@ class ZettelkastenMcpServer:
                 return self.format_error_response(e)
 
         # Get linked notes
-        @self.mcp.tool(name="zk_get_linked_notes")
-        def zk_get_linked_notes(note_id: str, direction: str = "both") -> str:
+        @self.mcp.tool(name="pzk_get_linked_notes")
+        def pzk_get_linked_notes(note_id: str, direction: str = "both") -> str:
             """Get notes linked to/from a note.
             Args:
                 note_id: ID of the note
@@ -399,11 +399,11 @@ class ZettelkastenMcpServer:
             except Exception as e:
                 return self.format_error_response(e)
 
-        self.zk_get_linked_notes = zk_get_linked_notes
+        self.pzk_get_linked_notes = pzk_get_linked_notes
 
         # Get all tags
-        @self.mcp.tool(name="zk_get_all_tags")
-        def zk_get_all_tags() -> str:
+        @self.mcp.tool(name="pzk_get_all_tags")
+        def pzk_get_all_tags() -> str:
             """Get all tags in the Zettelkasten."""
             try:
                 tags = self.zettel_service.get_all_tags()
@@ -421,8 +421,8 @@ class ZettelkastenMcpServer:
                 return self.format_error_response(e)
 
         # Find similar notes
-        @self.mcp.tool(name="zk_find_similar_notes")
-        def zk_find_similar_notes(
+        @self.mcp.tool(name="pzk_find_similar_notes")
+        def pzk_find_similar_notes(
             note_id: str, threshold: float = 0.3, limit: int = 5
         ) -> str:
             """Find notes similar to a given note.
@@ -460,8 +460,8 @@ class ZettelkastenMcpServer:
                 return self.format_error_response(e)
 
         # Find central notes
-        @self.mcp.tool(name="zk_find_central_notes")
-        def zk_find_central_notes(limit: int = 10) -> str:
+        @self.mcp.tool(name="pzk_find_central_notes")
+        def pzk_find_central_notes(limit: int = 10) -> str:
             """Find notes with the most connections (incoming + outgoing links).
             Notes are ranked by their total number of connections, determining
             their centrality in the knowledge network. Due to database constraints,
@@ -495,8 +495,8 @@ class ZettelkastenMcpServer:
                 return self.format_error_response(e)
 
         # Find orphaned notes
-        @self.mcp.tool(name="zk_find_orphaned_notes")
-        def zk_find_orphaned_notes() -> str:
+        @self.mcp.tool(name="pzk_find_orphaned_notes")
+        def pzk_find_orphaned_notes() -> str:
             """Find notes with no connections to other notes."""
             try:
                 # Get orphaned notes
@@ -522,8 +522,8 @@ class ZettelkastenMcpServer:
                 return self.format_error_response(e)
 
         # List notes by date range
-        @self.mcp.tool(name="zk_list_notes_by_date")
-        def zk_list_notes_by_date(
+        @self.mcp.tool(name="pzk_list_notes_by_date")
+        def pzk_list_notes_by_date(
             start_date: Optional[str] = None,
             end_date: Optional[str] = None,
             use_updated: bool = False,
@@ -598,8 +598,8 @@ class ZettelkastenMcpServer:
                 return self.format_error_response(e)
 
         # Rebuild the index
-        @self.mcp.tool(name="zk_rebuild_index")
-        def zk_rebuild_index() -> str:
+        @self.mcp.tool(name="pzk_rebuild_index")
+        def pzk_rebuild_index() -> str:
             """Rebuild the database index from files."""
             try:
                 # Get count before rebuild
@@ -626,39 +626,49 @@ class ZettelkastenMcpServer:
         # Action-item tools (PARA / GTD)
         # ----------------------------------------------------------------
 
-        @self.mcp.tool(name="zk_create_task")
-        def zk_create_task(
+        @self.mcp.tool(name="pzk_create_task")
+        def pzk_create_task(
             title: str,
             content: str,
+            project_id: str = "",
             status: str = "inbox",
             tags: Optional[str] = None,
-            project_id: Optional[str] = None,
+            area_id: Optional[str] = None,
             due_date: Optional[str] = None,
+            remind_at: Optional[str] = None,
             priority: Optional[int] = None,
             recurrence_rule: Optional[str] = None,
             estimated_minutes: Optional[int] = None,
             source: str = "manual",
+            context: Optional[str] = None,
+            energy_level: Optional[str] = None,
         ) -> str:
-            """Create a task note.
+            """Create a task note. Tasks must belong to a project.
             Args:
                 title: Task title
                 content: Task description
-                status: inbox, ready, active, waiting, someday, done, cancelled
+                project_id: ID of the project this task belongs to (required)
+                status: inbox, ready, scheduled, active, waiting, someday, done, cancelled
                 tags: Comma-separated tags
-                project_id: ID of a project note to link this task to (PART_OF)
-                due_date: Due date in YYYY-MM-DD format
+                area_id: Override area (auto-filled from project if omitted)
+                due_date: Due date YYYY-MM-DD
+                remind_at: Reminder date YYYY-MM-DD
                 priority: 1 (low) to 4 (critical)
                 recurrence_rule: daily, weekly, monthly, quarterly, yearly
                 estimated_minutes: Estimated effort in minutes
-                source: manual, inbox, email, meeting, voice, import, recurring
+                source: manual, inbox, email, meeting, voice, transcript, book, article, chat, web, pdf, recurring
+                context: GTD context — auto-applies @{context} tag (e.g. 'home' → '@home')
+                energy_level: high, medium, or low — auto-applies {level}-energy tag
             """
             try:
                 import datetime as _dt
 
+                if not project_id:
+                    return "project_id is required. Tasks must belong to a project."
                 try:
-                    task_status = TaskStatus(status.lower())
+                    task_status = NoteStatus(status.lower())
                 except ValueError:
-                    return f"Invalid status: {status}. Valid: {', '.join(s.value for s in TaskStatus)}"
+                    return f"Invalid status: {status}. Valid: {', '.join(s.value for s in NoteStatus)}"
                 try:
                     note_source = NoteSource(source.lower())
                 except ValueError:
@@ -669,16 +679,40 @@ class ZettelkastenMcpServer:
                         parsed_due = _dt.date.fromisoformat(due_date)
                     except ValueError:
                         return f"Invalid due_date: {due_date}. Use YYYY-MM-DD."
+                parsed_remind = None
+                if remind_at:
+                    try:
+                        parsed_remind = _dt.date.fromisoformat(remind_at)
+                    except ValueError:
+                        return f"Invalid remind_at: {remind_at}. Use YYYY-MM-DD."
                 tag_list = (
                     [t.strip() for t in tags.split(",") if t.strip()] if tags else []
                 )
+                # Auto-apply @context tag
+                if context:
+                    ctx = context.lstrip("@").strip()
+                    if ctx:
+                        tag_list.append(f"@{ctx}")
+                # Auto-apply energy tag
+                _energy_tags = {
+                    "high": "high-energy",
+                    "medium": "mid-energy",
+                    "low": "low-energy",
+                }
+                if energy_level:
+                    el = energy_level.lower()
+                    if el not in _energy_tags:
+                        return f"Invalid energy_level: {energy_level}. Valid: high, medium, low"
+                    tag_list.append(_energy_tags[el])
                 task = self.zettel_service.create_task(
                     title=title,
                     content=content,
                     status=task_status,
                     tags=tag_list,
                     project_id=project_id,
+                    area_id=area_id,
                     due_date=parsed_due,
+                    remind_at=parsed_remind,
                     priority=priority,
                     recurrence_rule=recurrence_rule,
                     estimated_minutes=estimated_minutes,
@@ -688,8 +722,8 @@ class ZettelkastenMcpServer:
             except Exception as e:
                 return self.format_error_response(e)
 
-        @self.mcp.tool(name="zk_update_task_status")
-        def zk_update_task_status(task_id: str, status: str) -> str:
+        @self.mcp.tool(name="pzk_update_task_status")
+        def pzk_update_task_status(task_id: str, status: str) -> str:
             """Update the status of a task.
             Args:
                 task_id: ID of the task note
@@ -697,19 +731,19 @@ class ZettelkastenMcpServer:
             """
             try:
                 try:
-                    new_status = TaskStatus(status.lower())
+                    new_status = NoteStatus(status.lower())
                 except ValueError:
-                    return f"Invalid status: {status}. Valid: {', '.join(s.value for s in TaskStatus)}"
+                    return f"Invalid status: {status}. Valid: {', '.join(s.value for s in NoteStatus)}"
                 updated = self.zettel_service.update_task_status(task_id, new_status)
                 msg = f"Task {task_id} status updated to '{new_status.value}'."
-                if new_status == TaskStatus.DONE and updated.recurrence_rule:
+                if new_status == NoteStatus.DONE and updated.recurrence_rule:
                     msg += " New recurring instance created."
                 return msg
             except Exception as e:
                 return self.format_error_response(e)
 
-        @self.mcp.tool(name="zk_get_tasks")
-        def zk_get_tasks(
+        @self.mcp.tool(name="pzk_get_tasks")
+        def pzk_get_tasks(
             status: Optional[str] = None,
             project_id: Optional[str] = None,
             due_date: Optional[str] = None,
@@ -732,9 +766,9 @@ class ZettelkastenMcpServer:
                 task_status = None
                 if status:
                     try:
-                        task_status = TaskStatus(status.lower())
+                        task_status = NoteStatus(status.lower())
                     except ValueError:
-                        return f"Invalid status: {status}. Valid: {', '.join(s.value for s in TaskStatus)}"
+                        return f"Invalid status: {status}. Valid: {', '.join(s.value for s in NoteStatus)}"
                 due_before = None
                 if overdue_only:
                     due_before = _dt.date.today() - _dt.timedelta(days=1)
@@ -765,8 +799,8 @@ class ZettelkastenMcpServer:
             except Exception as e:
                 return self.format_error_response(e)
 
-        @self.mcp.tool(name="zk_get_todays_tasks")
-        def zk_get_todays_tasks(include_overdue: bool = True) -> str:
+        @self.mcp.tool(name="pzk_get_todays_tasks")
+        def pzk_get_todays_tasks(include_overdue: bool = True) -> str:
             """Return tasks due today and optionally overdue tasks.
             Args:
                 include_overdue: Include tasks with past due dates (default: True)
@@ -785,18 +819,20 @@ class ZettelkastenMcpServer:
             except Exception as e:
                 return self.format_error_response(e)
 
-        @self.mcp.tool(name="zk_create_project")
-        def zk_create_project(
+        @self.mcp.tool(name="pzk_create_project")
+        def pzk_create_project(
             title: str,
             content: str,
+            area_id: Optional[str] = None,
             outcome: Optional[str] = None,
             deadline: Optional[str] = None,
             tags: Optional[str] = None,
         ) -> str:
-            """Create a project note.
+            """Create a project note, optionally linked to an area.
             Args:
                 title: Project title
                 content: Project description
+                area_id: ID of the area this project belongs to
                 outcome: The desired outcome/goal
                 deadline: Target completion date (YYYY-MM-DD)
                 tags: Comma-separated tags
@@ -804,6 +840,10 @@ class ZettelkastenMcpServer:
             try:
                 import datetime as _dt
 
+                if area_id:
+                    area = self.zettel_service.get_note(area_id)
+                    if not area or area.note_type != NoteType.AREA:
+                        return f"area_id {area_id} is not a valid area note."
                 parsed_deadline = None
                 if deadline:
                     try:
@@ -818,14 +858,15 @@ class ZettelkastenMcpServer:
                     content=content,
                     outcome=outcome,
                     deadline=parsed_deadline,
+                    area_id=area_id,
                     tags=tag_list,
                 )
                 return f"Project created successfully with ID: {project.id}"
             except Exception as e:
                 return self.format_error_response(e)
 
-        @self.mcp.tool(name="zk_get_project")
-        def zk_get_project(project_id: str) -> str:
+        @self.mcp.tool(name="pzk_get_project")
+        def pzk_get_project(project_id: str) -> str:
             """Get a project note with a summary of its linked tasks by status.
             Args:
                 project_id: ID of the project note
@@ -854,8 +895,8 @@ class ZettelkastenMcpServer:
             except Exception as e:
                 return self.format_error_response(e)
 
-        @self.mcp.tool(name="zk_get_project_tasks")
-        def zk_get_project_tasks(
+        @self.mcp.tool(name="pzk_get_project_tasks")
+        def pzk_get_project_tasks(
             project_id: str,
             status: Optional[str] = None,
             limit: int = 50,
@@ -870,7 +911,7 @@ class ZettelkastenMcpServer:
                 task_status = None
                 if status:
                     try:
-                        task_status = TaskStatus(status.lower())
+                        task_status = NoteStatus(status.lower())
                     except ValueError:
                         return f"Invalid status: {status}."
                 tasks = self.zettel_service.get_project_tasks(project_id, task_status)
@@ -888,8 +929,8 @@ class ZettelkastenMcpServer:
             except Exception as e:
                 return self.format_error_response(e)
 
-        @self.mcp.tool(name="zk_create_area")
-        def zk_create_area(
+        @self.mcp.tool(name="pzk_create_area")
+        def pzk_create_area(
             title: str,
             content: str,
             cadence: Optional[str] = None,
@@ -913,8 +954,8 @@ class ZettelkastenMcpServer:
             except Exception as e:
                 return self.format_error_response(e)
 
-        @self.mcp.tool(name="zk_list_projects")
-        def zk_list_projects(include_done: bool = False, limit: int = 20) -> str:
+        @self.mcp.tool(name="pzk_list_projects")
+        def pzk_list_projects(include_done: bool = False, limit: int = 20) -> str:
             """List all project notes, sorted by due date.
             Args:
                 include_done: Include completed/cancelled projects (default: False)
@@ -928,7 +969,7 @@ class ZettelkastenMcpServer:
                     projects = [
                         p
                         for p in projects
-                        if p.status not in (TaskStatus.DONE, TaskStatus.CANCELLED)
+                        if p.status not in (NoteStatus.DONE, NoteStatus.CANCELLED)
                     ]
                 projects.sort(key=lambda p: (p.due_date or _dt.date.max))
                 projects = projects[:limit]
@@ -947,8 +988,8 @@ class ZettelkastenMcpServer:
             except Exception as e:
                 return self.format_error_response(e)
 
-        @self.mcp.tool(name="zk_list_areas")
-        def zk_list_areas(limit: int = 20) -> str:
+        @self.mcp.tool(name="pzk_list_areas")
+        def pzk_list_areas(limit: int = 20) -> str:
             """List all area notes.
             Args:
                 limit: Maximum results
@@ -965,6 +1006,24 @@ class ZettelkastenMcpServer:
                     if cadence:
                         out += f"   Cadence: {cadence}\n"
                     out += "\n"
+                return out
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="pzk_get_reminders")
+        def pzk_get_reminders(limit: int = 20) -> str:
+            """Return notes and tasks with remind_at <= today, sorted by remind_at.
+            Args:
+                limit: Maximum results (default 20)
+            """
+            try:
+                notes = self.zettel_service.get_reminders(limit)
+                if not notes:
+                    return "No reminders due today."
+                out = f"Reminders due ({len(notes)}):\n\n"
+                for i, n in enumerate(notes, 1):
+                    out += f"{i}. {n.title} (ID: {n.id})\n"
+                    out += f"   Type: {n.note_type.value}  Remind: {n.remind_at}\n\n"
                 return out
             except Exception as e:
                 return self.format_error_response(e)
