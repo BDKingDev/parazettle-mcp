@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from sqlalchemy import (
     Column,
+    Date,
     DateTime,
     Engine,
     ForeignKey,
@@ -46,6 +47,13 @@ class DBNote(Base):
     created_at = Column(DateTime, default=datetime.datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.now, nullable=False)
     metadata_json = Column(Text, nullable=True)  # JSON-serialized note.metadata dict
+    # Action-item columns
+    status = Column(String(50), nullable=True, index=True)
+    source = Column(String(50), nullable=True, index=True)
+    due_date = Column(Date, nullable=True, index=True)
+    priority = Column(Integer, nullable=True)
+    recurrence_rule = Column(String(255), nullable=True)
+    estimated_minutes = Column(Integer, nullable=True)
 
     # Relationships
     tags = relationship("DBTag", secondary=note_tags, back_populates="notes")
@@ -136,12 +144,24 @@ def init_db() -> Engine:
     # One-time: WAL mode (persistent) and schema migration
     with engine.connect() as conn:
         conn.execute(text("PRAGMA journal_mode=WAL"))
-        # Add metadata_json column to existing databases if absent
+        # Add new columns to existing databases if absent
         existing = {
             row[1] for row in conn.execute(text("PRAGMA table_info(notes)")).fetchall()
         }
-        if "metadata_json" not in existing:
-            conn.execute(text("ALTER TABLE notes ADD COLUMN metadata_json TEXT"))
+        new_cols = [
+            ("metadata_json", "TEXT"),
+            ("status", "VARCHAR(50)"),
+            ("source", "VARCHAR(50)"),
+            ("due_date", "DATE"),
+            ("priority", "INTEGER"),
+            ("recurrence_rule", "VARCHAR(255)"),
+            ("estimated_minutes", "INTEGER"),
+        ]
+        for col_name, col_type in new_cols:
+            if col_name not in existing:
+                conn.execute(
+                    text(f"ALTER TABLE notes ADD COLUMN {col_name} {col_type}")
+                )
         conn.commit()
     return engine
 

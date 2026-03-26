@@ -22,7 +22,15 @@ from zettelkasten_mcp.models.db_models import (
     get_session_factory,
     init_db,
 )
-from zettelkasten_mcp.models.schema import Link, LinkType, Note, NoteType, Tag
+from zettelkasten_mcp.models.schema import (
+    Link,
+    LinkType,
+    Note,
+    NoteSource,
+    NoteType,
+    Tag,
+    TaskStatus,
+)
 from zettelkasten_mcp.storage.base import Repository
 
 logger = logging.getLogger(__name__)
@@ -248,6 +256,40 @@ class NoteRepository(Repository[Note]):
             datetime.datetime.fromisoformat(updated_str) if updated_str else created_at
         )
 
+        # Extract action-item fields (strip from metadata so they don't double-store)
+        _action_keys = {
+            "id",
+            "title",
+            "type",
+            "tags",
+            "created",
+            "updated",
+            "status",
+            "source",
+            "due_date",
+            "priority",
+            "recurrence_rule",
+            "estimated_minutes",
+        }
+
+        status_str = metadata.get("status")
+        status = TaskStatus(status_str) if status_str else None
+
+        source_str = metadata.get("source", NoteSource.MANUAL.value)
+        try:
+            source = NoteSource(source_str)
+        except ValueError:
+            source = NoteSource.MANUAL
+
+        due_date_str = metadata.get("due_date")
+        due_date = (
+            datetime.date.fromisoformat(str(due_date_str)) if due_date_str else None
+        )
+
+        priority = metadata.get("priority")
+        recurrence_rule = metadata.get("recurrence_rule") or None
+        estimated_minutes = metadata.get("estimated_minutes")
+
         # Create note object
         return Note(
             id=note_id,
@@ -258,11 +300,13 @@ class NoteRepository(Repository[Note]):
             links=links,
             created_at=created_at,
             updated_at=updated_at,
-            metadata={
-                k: v
-                for k, v in metadata.items()
-                if k not in ["id", "title", "type", "tags", "created", "updated"]
-            },
+            metadata={k: v for k, v in metadata.items() if k not in _action_keys},
+            status=status,
+            source=source,
+            due_date=due_date,
+            priority=priority,
+            recurrence_rule=recurrence_rule,
+            estimated_minutes=estimated_minutes,
         )
 
     def _index_note(self, note: Note, rendered_content: Optional[str] = None) -> None:
@@ -286,6 +330,14 @@ class NoteRepository(Repository[Note]):
                 if note.metadata
                 else None
             )
+            action_fields = dict(
+                status=note.status.value if note.status else None,
+                source=note.source.value if note.source != NoteSource.MANUAL else None,
+                due_date=note.due_date,
+                priority=note.priority,
+                recurrence_rule=note.recurrence_rule,
+                estimated_minutes=note.estimated_minutes,
+            )
             if db_note:
                 # Update existing note
                 db_note.title = note.title
@@ -293,6 +345,8 @@ class NoteRepository(Repository[Note]):
                 db_note.note_type = note.note_type.value
                 db_note.updated_at = note.updated_at
                 db_note.metadata_json = metadata_json
+                for field, value in action_fields.items():
+                    setattr(db_note, field, value)
                 # Clear existing links and tags to rebuild them
                 session.execute(
                     text("DELETE FROM links WHERE source_id = :id"), {"id": note.id}
@@ -310,6 +364,7 @@ class NoteRepository(Repository[Note]):
                     created_at=note.created_at,
                     updated_at=note.updated_at,
                     metadata_json=metadata_json,
+                    **action_fields,
                 )
                 session.add(db_note)
 
@@ -360,6 +415,19 @@ class NoteRepository(Repository[Note]):
             "created": note.created_at.isoformat(),
             "updated": note.updated_at.isoformat(),
         }
+        # Add action-item fields (only when set / non-default)
+        if note.status is not None:
+            metadata["status"] = note.status.value
+        if note.source != NoteSource.MANUAL:
+            metadata["source"] = note.source.value
+        if note.due_date is not None:
+            metadata["due_date"] = note.due_date.isoformat()
+        if note.priority is not None:
+            metadata["priority"] = note.priority
+        if note.recurrence_rule is not None:
+            metadata["recurrence_rule"] = note.recurrence_rule
+        if note.estimated_minutes is not None:
+            metadata["estimated_minutes"] = note.estimated_minutes
         # Add any custom metadata
         metadata.update(note.metadata)
 
@@ -434,6 +502,12 @@ class NoteRepository(Repository[Note]):
             created_at=db_note.created_at,
             updated_at=db_note.updated_at,
             metadata=metadata,
+            status=TaskStatus(db_note.status) if db_note.status else None,
+            source=NoteSource(db_note.source) if db_note.source else NoteSource.MANUAL,
+            due_date=db_note.due_date,
+            priority=db_note.priority,
+            recurrence_rule=db_note.recurrence_rule,
+            estimated_minutes=db_note.estimated_minutes,
         )
 
     def create(self, note: Note) -> Note:
@@ -566,6 +640,14 @@ class NoteRepository(Repository[Note]):
                         if note.metadata
                         else None
                     )
+                    db_note.status = note.status.value if note.status else None
+                    db_note.source = (
+                        note.source.value if note.source != NoteSource.MANUAL else None
+                    )
+                    db_note.due_date = note.due_date
+                    db_note.priority = note.priority
+                    db_note.recurrence_rule = note.recurrence_rule
+                    db_note.estimated_minutes = note.estimated_minutes
 
                     # Clear existing tags
                     db_note.tags = []
@@ -694,6 +776,23 @@ class NoteRepository(Repository[Note]):
                 query = query.where(DBNote.updated_at >= kwargs["updated_after"])
             if "updated_before" in kwargs:
                 query = query.where(DBNote.updated_at <= kwargs["updated_before"])
+            # Action-item filters
+            if "status" in kwargs:
+                sv = kwargs["status"]
+                query = query.where(
+                    DBNote.status == (sv.value if isinstance(sv, TaskStatus) else sv)
+                )
+            if "source" in kwargs:
+                src = kwargs["source"]
+                query = query.where(
+                    DBNote.source == (src.value if isinstance(src, NoteSource) else src)
+                )
+            if "due_date_before" in kwargs:
+                query = query.where(DBNote.due_date <= kwargs["due_date_before"])
+            if "due_date_after" in kwargs:
+                query = query.where(DBNote.due_date >= kwargs["due_date_after"])
+            if "priority" in kwargs:
+                query = query.where(DBNote.priority == kwargs["priority"])
             # Execute query and apply unique() to handle duplicates from joins
             result = session.execute(query)
             db_notes = result.unique().scalars().all()
