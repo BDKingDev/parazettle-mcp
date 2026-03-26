@@ -109,6 +109,7 @@ This system uses a dual storage approach:
    - Enables Claude to quickly traverse the knowledge graph
    - Maintains relationship information for faster link traversal
    - Is automatically rebuilt from Markdown files when needed
+   - Runs in WAL (Write-Ahead Log) mode for faster concurrent access
 
 If you edit Markdown files directly outside the system, you'll need to run the `zk_rebuild_index` tool to update the database. The database itself can be deleted at any time - it will be regenerated from your Markdown files.
 
