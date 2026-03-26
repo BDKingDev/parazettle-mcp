@@ -1,6 +1,7 @@
 """Repository for note storage and retrieval."""
 
 import datetime
+import json
 import logging
 import os
 import threading
@@ -261,12 +262,14 @@ class NoteRepository(Repository[Note]):
         with self.session_factory() as session:
             # Create or update note
             db_note = session.scalar(select(DBNote).where(DBNote.id == note.id))
+            metadata_json = json.dumps(note.metadata) if note.metadata else None
             if db_note:
                 # Update existing note
                 db_note.title = note.title
                 db_note.content = note.content
                 db_note.note_type = note.note_type.value
                 db_note.updated_at = note.updated_at
+                db_note.metadata_json = metadata_json
                 # Clear existing links and tags to rebuild them
                 session.execute(
                     text("DELETE FROM links WHERE source_id = :id"), {"id": note.id}
@@ -283,6 +286,7 @@ class NoteRepository(Repository[Note]):
                     note_type=note.note_type.value,
                     created_at=note.created_at,
                     updated_at=note.updated_at,
+                    metadata_json=metadata_json,
                 )
                 session.add(db_note)
 
@@ -377,10 +381,13 @@ class NoteRepository(Repository[Note]):
     def _note_from_db(self, db_note: DBNote) -> Note:
         """Reconstruct a Note purely from DB rows — no file read required.
 
-        Used by search() to avoid N disk reads for search results. The DB
-        stores full content and all relationships, so this is complete for
-        all querying purposes. Use get() when you need the canonical on-disk
-        version (e.g. after a direct file edit).
+        Used by search(), get_all(), and find_linked_notes() to avoid N disk
+        reads. The DB stores id, title, content, note_type, tags, outgoing
+        links, and timestamps — enough for all query and display purposes.
+
+        Custom frontmatter keys are stored as JSON in the metadata_json column
+        so note.metadata is consistent regardless of whether the note came from
+        get() or a DB-backed path (search, get_all, find_linked_notes).
         """
         tags = [Tag(name=t.name) for t in db_note.tags]
         links = [
@@ -393,6 +400,7 @@ class NoteRepository(Repository[Note]):
             )
             for lnk in db_note.outgoing_links
         ]
+        metadata = json.loads(db_note.metadata_json) if db_note.metadata_json else {}
         return Note(
             id=db_note.id,
             title=db_note.title,
@@ -402,6 +410,7 @@ class NoteRepository(Repository[Note]):
             links=links,
             created_at=db_note.created_at,
             updated_at=db_note.updated_at,
+            metadata=metadata,
         )
 
     def create(self, note: Note) -> Note:
@@ -426,7 +435,6 @@ class NoteRepository(Repository[Note]):
         except IOError as e:
             raise IOError(f"Failed to write note to {file_path}: {e}")
 
-        _cache_evict(str(file_path))
         # Index in database
         self._index_note(note)
         return note
@@ -477,25 +485,8 @@ class NoteRepository(Repository[Note]):
             result = session.execute(query)
             # Apply unique() to handle the duplicate rows from eager loading
             db_notes = result.unique().scalars().all()
-
-            # Process notes in batches to reduce memory usage
-            batch_size = 50
-            all_notes = []
-            # Create batches of note IDs
-            note_ids = [note.id for note in db_notes]
-            for i in range(0, len(note_ids), batch_size):
-                batch_ids = note_ids[i : i + batch_size]
-                note_batch = []
-                # Process each note in the batch
-                for note_id in batch_ids:
-                    try:
-                        note = self.get(note_id)
-                        if note:
-                            note_batch.append(note)
-                    except Exception as e:
-                        logger.error(f"Error loading note {note_id}: {e}")
-                all_notes.extend(note_batch)
-            return all_notes
+            # Reconstruct Notes from DB rows — avoids N file reads
+            return [self._note_from_db(db_note) for db_note in db_notes]
 
     def update(self, note: Note) -> Note:
         """Update a note."""
@@ -533,6 +524,9 @@ class NoteRepository(Repository[Note]):
                     db_note.content = note.content
                     db_note.note_type = note.note_type.value
                     db_note.updated_at = note.updated_at
+                    db_note.metadata_json = (
+                        json.dumps(note.metadata) if note.metadata else None
+                    )
 
                     # Clear existing tags
                     db_note.tags = []
@@ -733,14 +727,8 @@ class NoteRepository(Repository[Note]):
             result = session.execute(query)
             # Apply unique() to handle the duplicate rows from eager loading
             db_notes = result.unique().scalars().all()
-
-            # Convert to model Notes
-            notes = []
-            for db_note in db_notes:
-                note = self.get(db_note.id)
-                if note:
-                    notes.append(note)
-            return notes
+            # Reconstruct Notes from DB rows — avoids N file reads
+            return [self._note_from_db(db_note) for db_note in db_notes]
 
     def get_all_tags(self) -> List[Tag]:
         """Get all tags in the system."""

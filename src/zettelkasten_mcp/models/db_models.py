@@ -15,7 +15,6 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
 )
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, Session, declarative_base, relationship, sessionmaker
 
 from zettelkasten_mcp.config import config
@@ -45,6 +44,7 @@ class DBNote(Base):
     )
     created_at = Column(DateTime, default=datetime.datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.now, nullable=False)
+    metadata_json = Column(Text, nullable=True)  # JSON-serialized note.metadata dict
 
     # Relationships
     tags = relationship("DBTag", secondary=note_tags, back_populates="notes")
@@ -128,6 +128,12 @@ def init_db() -> Engine:
         conn.execute(text("PRAGMA synchronous=NORMAL"))
         conn.execute(text("PRAGMA cache_size=-8000"))
         conn.execute(text("PRAGMA busy_timeout=5000"))
+        # Add metadata_json column to existing databases if absent
+        existing = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(notes)")).fetchall()
+        }
+        if "metadata_json" not in existing:
+            conn.execute(text("ALTER TABLE notes ADD COLUMN metadata_json TEXT"))
         conn.commit()
     return engine
 
