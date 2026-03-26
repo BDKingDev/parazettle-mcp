@@ -337,7 +337,10 @@ def test_metadata_round_trips_through_search(note_repository):
     note_repository.create(note)
     results = note_repository.search(title="Metadata Search Test")
     assert len(results) == 1
-    assert results[0].metadata == {"source_url": "https://example.com", "author": "test"}
+    assert results[0].metadata == {
+        "source_url": "https://example.com",
+        "author": "test",
+    }
 
 
 def test_metadata_round_trips_through_get_all(note_repository):
@@ -384,3 +387,55 @@ def test_note_without_metadata_returns_empty_dict(note_repository):
     match = next((n for n in all_notes if n.id == saved.id), None)
     assert match is not None
     assert match.metadata == {}
+
+
+def test_cache_returns_independent_copy(note_repository):
+    """Mutating a note returned by get() should not corrupt the cache."""
+    note = Note(title="Cache Copy Test", content="Original content.")
+    saved = note_repository.create(note)
+    # Prime cache
+    first = note_repository.get(saved.id)
+    assert first is not None
+    # Mutate the returned object
+    first.title = "MUTATED"
+    first.tags.append(Tag(name="injected"))
+    # Second get() should return the original, not the mutated version
+    second = note_repository.get(saved.id)
+    assert second is not None
+    assert second.title == "Cache Copy Test"
+    assert all(t.name != "injected" for t in second.tags)
+
+
+def test_metadata_with_datetime_round_trips(note_repository):
+    """Metadata containing datetime.date values should serialize to JSON safely."""
+    import datetime as dt
+
+    note = Note(
+        title="Date Metadata Test",
+        content="Has a date in metadata.",
+        metadata={
+            "published": dt.date(2026, 1, 15),
+            "updated": dt.datetime(2026, 3, 1, 12, 0),
+        },
+    )
+    note_repository.create(note)
+    results = note_repository.search(title="Date Metadata Test")
+    assert len(results) == 1
+    # Dates are serialized as ISO strings by _json_default
+    assert results[0].metadata["published"] == "2026-01-15"
+    assert results[0].metadata["updated"] == "2026-03-01T12:00:00"
+
+
+def test_search_content_matches_get_content(note_repository):
+    """Content from search() (DB-backed) should match content from get() (file-backed)."""
+    note = Note(
+        title="Content Consistency",
+        content="Body text here.",
+        tags=[Tag(name="test")],
+    )
+    saved = note_repository.create(note)
+    from_file = note_repository.get(saved.id)
+    from_db = note_repository.search(title="Content Consistency")
+    assert len(from_db) == 1
+    assert from_file is not None
+    assert from_db[0].content == from_file.content

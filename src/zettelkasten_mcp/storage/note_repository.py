@@ -10,12 +10,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
 import frontmatter
-from sqlalchemy import and_, create_engine, func, or_, select, text
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy.orm import joinedload
 
 from zettelkasten_mcp.config import config
 from zettelkasten_mcp.models.db_models import (
-    Base,
     DBLink,
     DBNote,
     DBTag,
@@ -41,7 +40,8 @@ def _cache_get(path_str: str, mtime_ns: int) -> Optional[Note]:
         note = _NOTE_CACHE.get(key)
         if note is not None:
             _NOTE_CACHE.move_to_end(key)
-        return note
+            return note.model_copy(deep=True)
+    return None
 
 
 def _cache_put(path_str: str, mtime_ns: int, note: Note) -> None:
@@ -59,6 +59,13 @@ def _cache_evict(path_str: str) -> None:
         stale = [k for k in _NOTE_CACHE if k[0] == path_str]
         for k in stale:
             del _NOTE_CACHE[k]
+
+
+def _json_default(obj: Any) -> Any:
+    """Convert non-JSON-serializable types for metadata storage."""
+    if isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 class NoteRepository(Repository[Note]):
@@ -257,16 +264,31 @@ class NoteRepository(Repository[Note]):
             },
         )
 
-    def _index_note(self, note: Note) -> None:
-        """Index a note in the database."""
+    def _index_note(self, note: Note, rendered_content: Optional[str] = None) -> None:
+        """Index a note in the database.
+
+        Args:
+            note: The note to index.
+            rendered_content: If provided, used as db_note.content instead of
+                note.content. Callers that have already rendered the markdown
+                (create, update) pass the parsed body here so the DB matches
+                the file exactly.
+        """
         with self.session_factory() as session:
             # Create or update note
             db_note = session.scalar(select(DBNote).where(DBNote.id == note.id))
-            metadata_json = json.dumps(note.metadata) if note.metadata else None
+            content_for_db = (
+                rendered_content if rendered_content is not None else note.content
+            )
+            metadata_json = (
+                json.dumps(note.metadata, default=_json_default)
+                if note.metadata
+                else None
+            )
             if db_note:
                 # Update existing note
                 db_note.title = note.title
-                db_note.content = note.content
+                db_note.content = content_for_db
                 db_note.note_type = note.note_type.value
                 db_note.updated_at = note.updated_at
                 db_note.metadata_json = metadata_json
@@ -282,7 +304,7 @@ class NoteRepository(Repository[Note]):
                 db_note = DBNote(
                     id=note.id,
                     title=note.title,
-                    content=note.content,
+                    content=content_for_db,
                     note_type=note.note_type.value,
                     created_at=note.created_at,
                     updated_at=note.updated_at,
@@ -434,9 +456,16 @@ class NoteRepository(Repository[Note]):
                 tmp_path.replace(file_path)
         except IOError as e:
             raise IOError(f"Failed to write note to {file_path}: {e}")
+        finally:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
 
-        # Index in database
-        self._index_note(note)
+        # Index in database — pass rendered body so DB content matches file
+        rendered_body = frontmatter.loads(markdown).content
+        self._index_note(note, rendered_content=rendered_body)
         return note
 
     def get(self, id: str) -> Optional[Note]:
@@ -461,7 +490,7 @@ class NoteRepository(Repository[Note]):
                 content = f.read()
             note = self._parse_note_from_markdown(content)
             _cache_put(path_str, mtime_ns, note)
-            return note
+            return note.model_copy(deep=True)
         except Exception as e:
             raise IOError(f"Failed to read note {id}: {e}")
 
@@ -511,8 +540,15 @@ class NoteRepository(Repository[Note]):
                 tmp_path.replace(file_path)
         except IOError as e:
             raise IOError(f"Failed to write note to {file_path}: {e}")
+        finally:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
 
         _cache_evict(str(file_path))
+        rendered_body = frontmatter.loads(markdown).content
         try:
             # Re-index in database
             with self.session_factory() as session:
@@ -521,11 +557,13 @@ class NoteRepository(Repository[Note]):
                 if db_note:
                     # Update the note fields
                     db_note.title = note.title
-                    db_note.content = note.content
+                    db_note.content = rendered_body
                     db_note.note_type = note.note_type.value
                     db_note.updated_at = note.updated_at
                     db_note.metadata_json = (
-                        json.dumps(note.metadata) if note.metadata else None
+                        json.dumps(note.metadata, default=_json_default)
+                        if note.metadata
+                        else None
                     )
 
                     # Clear existing tags

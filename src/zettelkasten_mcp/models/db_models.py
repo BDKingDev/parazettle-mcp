@@ -117,17 +117,24 @@ class DBLink(Base):
 
 def init_db() -> Engine:
     """Initialize the database."""
-    from sqlalchemy import text
+    from sqlalchemy import event, text
 
     # Create engine based on configuration
     engine = create_engine(config.get_db_url())
     Base.metadata.create_all(engine)
-    # Enable WAL mode and performance pragmas
+
+    # Connection-scoped pragmas — applied on every new connection
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_conn, connection_record):  # type: ignore[no-untyped-def]
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA cache_size=-8000")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.close()
+
+    # One-time: WAL mode (persistent) and schema migration
     with engine.connect() as conn:
         conn.execute(text("PRAGMA journal_mode=WAL"))
-        conn.execute(text("PRAGMA synchronous=NORMAL"))
-        conn.execute(text("PRAGMA cache_size=-8000"))
-        conn.execute(text("PRAGMA busy_timeout=5000"))
         # Add metadata_json column to existing databases if absent
         existing = {
             row[1] for row in conn.execute(text("PRAGMA table_info(notes)")).fetchall()
