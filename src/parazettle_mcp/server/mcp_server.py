@@ -133,9 +133,8 @@ class ZettelkastenMcpServer:
                 if not note:
                     return f"Note not found: {identifier}"
 
-                # Format the note
-                result = f"# {note.title}\n"
-                result += f"ID: {note.id}\n"
+                # Format the note (content already includes the # Title heading)
+                result = f"ID: {note.id}\n"
                 result += f"Type: {note.note_type.value}\n"
                 result += f"Created: {note.created_at.isoformat()}\n"
                 result += f"Updated: {note.updated_at.isoformat()}\n"
