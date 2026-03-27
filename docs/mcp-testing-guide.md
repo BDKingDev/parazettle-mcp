@@ -1,6 +1,6 @@
 # MCP Testing Guide
 
-A complete walkthrough of all 25 `pzk_` tools in logical execution order. Run sections in sequence — later sections reference IDs created in earlier ones.
+A complete walkthrough of all 26 `pzk_` tools in logical execution order. Run sections in sequence — later sections reference IDs created in earlier ones.
 
 Replace `{AREA_ID}`, `{PROJECT_ID}`, etc. with the actual IDs returned from each creation call.
 
@@ -26,6 +26,38 @@ Creates an area note (top of the PARA hierarchy).
 
 ```
 Area created successfully with ID: {AREA_ID}
+```
+
+---
+
+### `pzk_get_area`
+
+Returns an area with cadence, linked projects, and per-project task counts.
+
+**Call:**
+
+```json
+{
+  "area_id": "{AREA_ID}"
+}
+```
+
+**Expected output:**
+
+```
+ID: {AREA_ID}
+Cadence: weekly review
+Projects: 1
+
+# Test Area
+
+Area for MCP testing.
+
+## Links
+- has_part [[{PROJECT_ID}]]
+
+## Projects
+- Test Project (ID: {PROJECT_ID}) — 1 task(s)
 ```
 
 ---
@@ -510,6 +542,8 @@ Note deleted successfully: {TEMP_NOTE_ID}
 
 Verify deletion: `pzk_get_note {TEMP_NOTE_ID}` should return `Note not found: {TEMP_NOTE_ID}`.
 
+**Link cleanup verification** — if any other note had an outgoing link to the deleted note, that link is automatically removed from its markdown file on deletion. Verify by calling `pzk_get_note` on any source note that linked to it — the reference should be gone.
+
 ---
 
 ## Section 4 — Discovery and Search
@@ -662,36 +696,41 @@ Central notes in the Zettelkasten (most connected):
 
 Notes with no incoming or outgoing links.
 
+**Setup** — create a note without linking it to anything:
+
+```json
+{
+  "title": "Orphaned test note",
+  "content": "This note has no links.",
+  "note_type": "fleeting"
+}
+```
+
 **Call:** *(no parameters)*
 
 **Expected output:**
 
 ```
-Found N orphaned notes:
+Found 1 orphaned notes:
 
-1. Some Unlinked Note (ID: ...)
-   Tags: ...
-   Preview: ...
-
-```
-
-If all notes are linked, returns:
+1. Orphaned test note (ID: {ORPHAN_ID})
+   Preview: # Orphaned test note  This note has no links.
 
 ```
-No orphaned notes found.
-```
+
+> **Note:** Every note in the test run is auto-linked (tasks link to projects, projects link to areas). You must explicitly create an unlinked note to get a non-empty result here.
 
 ---
 
 ### `pzk_list_notes_by_date`
 
-**Call (notes created today):**
+**Call (single day):**
 
 ```json
 {
   "start_date": "2026-03-26",
   "end_date": "2026-03-26",
-  "limit": 20
+  "limit": 5
 }
 ```
 
@@ -700,14 +739,25 @@ No orphaned notes found.
 ```
 Notes created between 2026-03-26 and 2026-03-26 (showing N results):
 
-1. Atomic notes are the foundation of Zettelkasten (ID: {NOTE_ID})
-   Created: 2026-03-26 ...
-   Tags: zettelkasten, methodology, atomicity, core-principle
-   Preview: Each note contains exactly one idea...
+1. Orphaned test note (ID: {ORPHAN_ID})
+   Created: 2026-03-26 19:05
+   Preview: # Orphaned test note  This note has no links...
 
 ```
 
-**Call (recently updated):**
+**Call (multi-day range):**
+
+```json
+{
+  "start_date": "2026-03-01",
+  "end_date": "2026-03-31",
+  "limit": 10
+}
+```
+
+Returns all notes created during March 2026. Use a range that spans your actual note creation dates — if the vault is new, a single-day range that matches your test session is sufficient.
+
+**Call (recently updated — use `use_updated=true`):**
 
 ```json
 {
@@ -716,6 +766,8 @@ Notes created between 2026-03-26 and 2026-03-26 (showing N results):
   "limit": 10
 }
 ```
+
+Returns notes *updated* on or after the start date, sorted by `updated_at`. Useful for finding recently revised notes regardless of when they were created.
 
 ---
 
@@ -744,6 +796,7 @@ Change in note count: 0
 | Tool | Required params | Key optional params |
 | --- | --- | --- |
 | `pzk_create_area` | title, content | cadence, tags |
+| `pzk_get_area` | area\_id | — |
 | `pzk_list_areas` | — | limit |
 | `pzk_create_project` | title, content | area\_id, outcome, deadline, tags |
 | `pzk_list_projects` | — | include\_done, limit |

@@ -186,6 +186,25 @@ def test_note_linking(note_repository):
     assert linked_notes[0].id == target_note.id
 
 
+def test_delete_removes_dangling_links_from_source_files(note_repository):
+    """Deleting a note must remove its reference from source notes' markdown files."""
+    source = Note(title="Source Note", content="Links to the target.")
+    target = Note(title="Target Note", content="Will be deleted.")
+    saved_source = note_repository.create(source)
+    saved_target = note_repository.create(target)
+
+    saved_source.add_link(saved_target.id, LinkType.REFERENCE)
+    note_repository.update(saved_source)
+
+    # Delete the target — source's markdown should be cleaned up
+    note_repository.delete(saved_target.id)
+
+    # File-backed read should not show the dangling link
+    refreshed = note_repository.get(saved_source.id)
+    assert refreshed is not None
+    assert all(lnk.target_id != saved_target.id for lnk in refreshed.links)
+
+
 # ---------------------------------------------------------------------------
 # Phase 1 data layer tests
 # ---------------------------------------------------------------------------

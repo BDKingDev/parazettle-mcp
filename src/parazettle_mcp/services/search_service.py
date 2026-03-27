@@ -1,7 +1,7 @@
 """Service for searching and discovering notes in the Zettelkasten."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from sqlalchemy import func, or_, select, text
@@ -220,7 +220,7 @@ class SearchService:
             # Check if in range
             if start_date and date < start_date:
                 continue
-            if end_date and date >= end_date + datetime.timedelta(seconds=1):
+            if end_date and date >= end_date + timedelta(seconds=1):
                 continue
 
             matching_notes.append(note)
