@@ -221,6 +221,95 @@ class TestMcpServer:
             text="test query", tags=["tag1", "tag2"], note_type=NoteType.PERMANENT
         )
 
+    def test_update_task_tool_registered(self):
+        """pzk_update_task tool should be registered."""
+        assert "pzk_update_task" in self.registered_tools
+
+    def test_update_task_updates_due_date(self):
+        """pzk_update_task updates due_date on a task note."""
+        mock_task = MagicMock()
+        mock_task.id = "task001"
+        mock_task.note_type = NoteType.TASK
+        mock_task.tags = []
+        self.mock_zettel_service.get_note.return_value = mock_task
+        self.mock_zettel_service.repository = MagicMock()
+
+        fn = self.registered_tools["pzk_update_task"]
+        result = fn(task_id="task001", due_date="2026-04-01")
+
+        assert "updated successfully" in result
+        assert mock_task.due_date is not None
+        self.mock_zettel_service.repository.update.assert_called_once_with(mock_task)
+
+    def test_update_task_rejects_non_task_note(self):
+        """pzk_update_task returns an error if the note is not a task."""
+        mock_note = MagicMock()
+        mock_note.note_type = NoteType.PERMANENT
+        self.mock_zettel_service.get_note.return_value = mock_note
+
+        fn = self.registered_tools["pzk_update_task"]
+        result = fn(task_id="note001", priority=3)
+
+        assert "not a task" in result
+        self.mock_zettel_service.repository.update.assert_not_called()
+
+    def test_update_task_rejects_invalid_due_date(self):
+        """pzk_update_task returns an error for a malformed due_date."""
+        mock_task = MagicMock()
+        mock_task.note_type = NoteType.TASK
+        self.mock_zettel_service.get_note.return_value = mock_task
+
+        fn = self.registered_tools["pzk_update_task"]
+        result = fn(task_id="task001", due_date="not-a-date")
+
+        assert "Invalid due_date" in result
+        self.mock_zettel_service.repository.update.assert_not_called()
+
+    def test_update_task_rejects_invalid_status(self):
+        """pzk_update_task returns an error for an unrecognised status value."""
+        mock_task = MagicMock()
+        mock_task.note_type = NoteType.TASK
+        self.mock_zettel_service.get_note.return_value = mock_task
+
+        fn = self.registered_tools["pzk_update_task"]
+        result = fn(task_id="task001", status="flying")
+
+        assert "Invalid status" in result
+        self.mock_zettel_service.repository.update.assert_not_called()
+
+    def test_update_task_routes_status_through_service(self):
+        """pzk_update_task calls update_task_status (not repository.update) for status changes."""
+        mock_task = MagicMock()
+        mock_task.note_type = NoteType.TASK
+        mock_task.recurrence_rule = None
+        self.mock_zettel_service.get_note.return_value = mock_task
+        self.mock_zettel_service.update_task_status.return_value = mock_task
+
+        fn = self.registered_tools["pzk_update_task"]
+        result = fn(task_id="task001", status="done")
+
+        assert "done" in result
+        self.mock_zettel_service.update_task_status.assert_called_once()
+        # repository.update should NOT be called for a status-only change
+        self.mock_zettel_service.repository.update.assert_not_called()
+
+    def test_update_task_announces_recurring_spawn(self):
+        """pzk_update_task includes 'recurring instance created' when a recurring task is completed."""
+        mock_task = MagicMock()
+        mock_task.note_type = NoteType.TASK
+        mock_task.recurrence_rule = "weekly"
+        self.mock_zettel_service.get_note.return_value = mock_task
+        self.mock_zettel_service.update_task_status.return_value = mock_task
+
+        fn = self.registered_tools["pzk_update_task"]
+        result = fn(task_id="task001", status="done")
+
+        assert "recurring instance created" in result
+
+    def test_update_task_status_tool_removed(self):
+        """pzk_update_task_status should no longer be registered; use pzk_update_task instead."""
+        assert "pzk_update_task_status" not in self.registered_tools
+
     def test_error_handling(self):
         """Test error handling in the server."""
         # Test ValueError handling

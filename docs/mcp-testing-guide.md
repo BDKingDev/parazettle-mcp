@@ -347,6 +347,62 @@ Reminders due (1):
 
 ---
 
+### `pzk_update_task`
+
+Update any mutable field on an existing task — due date, priority, estimated minutes, status, remind\_at, recurrence\_rule, or tags.
+
+**Call (set a due date and priority):**
+
+```json
+{
+  "task_id": "{TASK_ID}",
+  "due_date": "2026-04-01",
+  "priority": 3,
+  "estimated_minutes": 180
+}
+```
+
+**Expected output:**
+
+```
+Task {TASK_ID} updated successfully.
+```
+
+**Call (invalid due date — error path):**
+
+```json
+{
+  "task_id": "{TASK_ID}",
+  "due_date": "not-a-date"
+}
+```
+
+**Expected output:**
+
+```
+Invalid due_date: not-a-date. Use YYYY-MM-DD.
+```
+
+**Call (non-task note — error path):**
+
+```json
+{
+  "task_id": "{KNOWLEDGE_NOTE_ID}"
+}
+```
+
+**Expected output:**
+
+```
+Note {KNOWLEDGE_NOTE_ID} is not a task (type: permanent)
+```
+
+Verify the update took effect: call `pzk_get_note {TASK_ID}` and confirm the new `Due:` and priority values appear.
+
+Verify the task now surfaces in `pzk_get_todays_tasks` if `due_date` was set to today.
+
+---
+
 ### `pzk_update_task_status` — non-recurring
 
 Marks a task done. No new task spawned.
@@ -803,6 +859,7 @@ Change in note count: 0
 | `pzk_get_project` | project\_id | — |
 | `pzk_get_project_tasks` | project\_id | status, limit |
 | `pzk_create_task` | title, content, project\_id | status, due\_date, priority, energy\_level, context, remind\_at, recurrence\_rule |
+| `pzk_update_task` | task\_id | due\_date, priority, status, remind\_at, estimated\_minutes, recurrence\_rule, tags |
 | `pzk_update_task_status` | task\_id, status | — |
 | `pzk_get_tasks` | — | status, project\_id, due\_date, overdue\_only, priority, limit |
 | `pzk_get_todays_tasks` | — | include\_overdue |

@@ -315,6 +315,86 @@ def test_get_project_tasks(zettel_service, area):
     assert done_tasks[0].id == t2.id
 
 
+# ---------------------------------------------------------------------------
+# pzk_update_task (repository-level task field updates)
+# ---------------------------------------------------------------------------
+
+
+def test_update_task_due_date(zettel_service, project):
+    """Updating due_date via repository.update persists through get()."""
+    task = zettel_service.create_task("Update due date", ".", project_id=project.id)
+    task.due_date = datetime.date(2026, 4, 1)
+    zettel_service.repository.update(task)
+
+    refreshed = zettel_service.get_note(task.id)
+    assert refreshed.due_date == datetime.date(2026, 4, 1)
+
+
+def test_update_task_priority_and_estimated_minutes(zettel_service, project):
+    """Updating priority and estimated_minutes persists through get()."""
+    task = zettel_service.create_task("Update priority", ".", project_id=project.id)
+    task.priority = 4
+    task.estimated_minutes = 420
+    zettel_service.repository.update(task)
+
+    refreshed = zettel_service.get_note(task.id)
+    assert refreshed.priority == 4
+    assert refreshed.estimated_minutes == 420
+
+
+def test_update_task_multiple_fields_at_once(zettel_service, project):
+    """Multiple task fields can be updated in a single repository.update call."""
+    task = zettel_service.create_task("Multi-field update", ".", project_id=project.id)
+    task.due_date = datetime.date(2026, 4, 2)
+    task.priority = 3
+    task.status = NoteStatus.READY
+    task.estimated_minutes = 180
+    zettel_service.repository.update(task)
+
+    refreshed = zettel_service.get_note(task.id)
+    assert refreshed.due_date == datetime.date(2026, 4, 2)
+    assert refreshed.priority == 3
+    assert refreshed.status == NoteStatus.READY
+    assert refreshed.estimated_minutes == 180
+
+
+def test_update_task_status_done_still_spawns_recurring(zettel_service, project):
+    """Completing a recurring task via repository.update + update_task_status spawns next instance."""
+    today = datetime.date.today()
+    task = zettel_service.create_task(
+        "Recurring via update",
+        ".",
+        project_id=project.id,
+        due_date=today,
+        recurrence_rule="weekly",
+    )
+    # Simulate pzk_update_task: update non-status fields, then call update_task_status
+    task.priority = 2
+    zettel_service.repository.update(task)
+    zettel_service.update_task_status(task.id, NoteStatus.DONE)
+
+    new_tasks = zettel_service.get_tasks(status=NoteStatus.READY)
+    assert any(t.title == "Recurring via update" for t in new_tasks)
+    spawned = next(t for t in new_tasks if t.title == "Recurring via update")
+    assert spawned.due_date == today + datetime.timedelta(weeks=1)
+    assert spawned.priority == 2  # priority carried over from the completed instance
+
+
+def test_update_task_appears_in_todays_tasks_after_due_date_set(zettel_service, project):
+    """A task with no due date does not appear in get_todays_tasks(); setting due_date=today makes it appear."""
+    import datetime
+
+    task = zettel_service.create_task(
+        "No due date yet", ".", project_id=project.id, status=NoteStatus.READY
+    )
+    assert task.id not in {t.id for t in zettel_service.get_todays_tasks()}
+
+    task.due_date = datetime.date.today()
+    zettel_service.repository.update(task)
+
+    assert task.id in {t.id for t in zettel_service.get_todays_tasks()}
+
+
 def test_create_area_note(zettel_service):
     """create_area_note() creates an AREA-type note."""
     area = zettel_service.create_area_note(
