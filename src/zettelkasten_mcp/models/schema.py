@@ -113,10 +113,11 @@ class NoteType(str, Enum):
     AREA = "area"  # Ongoing responsibility with no end date (PARA)
 
 
-class TaskStatus(str, Enum):
-    """Processing/action status of a note or item.
+class NoteStatus(str, Enum):
+    """Processing/lifecycle status of any note or item.
 
-    INBOX applies to any note type — it means captured but not yet triaged.
+    INBOX applies to any note type — captured but not yet triaged.
+    EVERGREEN/ARCHIVED apply to knowledge notes.
     Remaining values are task-lifecycle states.
     """
 
@@ -124,9 +125,16 @@ class TaskStatus(str, Enum):
     READY = "ready"  # Triaged and ready to start — waiting to be picked up
     ACTIVE = "active"  # In progress
     WAITING = "waiting"  # Waiting on someone or something
+    SCHEDULED = "scheduled"  # Committed to a specific date/time slot
     SOMEDAY = "someday"  # Someday/maybe
     DONE = "done"  # Completed
     CANCELLED = "cancelled"  # Cancelled
+    ARCHIVED = "archived"  # Moved to archive — inactive but retrievable
+    EVERGREEN = "evergreen"  # Mature, stable knowledge note
+
+
+# Backwards-compatible alias — prefer NoteStatus in new code
+TaskStatus = NoteStatus
 
 
 class NoteSource(str, Enum):
@@ -137,6 +145,12 @@ class NoteSource(str, Enum):
     EMAIL = "email"
     MEETING = "meeting"
     VOICE = "voice"
+    TRANSCRIPT = "transcript"  # From meeting/audio transcript
+    BOOK = "book"  # From book reading
+    ARTICLE = "article"  # From article or blog post
+    CHAT = "chat"  # From chat or messaging thread
+    WEB = "web"  # From web clip
+    PDF = "pdf"  # From PDF document
     IMPORT = "import"
     RECURRING = "recurring"  # Auto-generated from a recurrence rule
 
@@ -173,8 +187,8 @@ class Note(BaseModel):
         default_factory=dict, description="Additional metadata for the note"
     )
     # Action-item fields — None for regular knowledge notes
-    status: Optional[TaskStatus] = Field(
-        default=None, description="Task status (task-type notes only)"
+    status: Optional[NoteStatus] = Field(
+        default=None, description="Lifecycle/workflow status of the note"
     )
     source: NoteSource = Field(
         default=NoteSource.MANUAL, description="Origin of the note"
@@ -191,6 +205,16 @@ class Note(BaseModel):
     )
     estimated_minutes: Optional[int] = Field(
         default=None, description="Estimated effort in minutes"
+    )
+    remind_at: Optional[datetime.date] = Field(
+        default=None,
+        description="Date to surface this note as a reminder — any note type",
+    )
+    project_id: Optional[str] = Field(
+        default=None, description="ID of the linked project note (PARA routing)"
+    )
+    area_id: Optional[str] = Field(
+        default=None, description="ID of the linked area note (PARA routing)"
     )
 
     model_config = {
