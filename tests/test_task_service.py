@@ -4,7 +4,7 @@ import datetime
 
 import pytest
 
-from zettelkasten_mcp.models.schema import (
+from parazettle_mcp.models.schema import (
     LinkType,
     NoteSource,
     NoteStatus,

@@ -8,8 +8,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from mcp.server.fastmcp import Context, FastMCP
 from sqlalchemy import exc as sqlalchemy_exc
 
-from zettelkasten_mcp.config import config
-from zettelkasten_mcp.models.schema import (
+from parazettle_mcp.config import config
+from parazettle_mcp.models.schema import (
     LinkType,
     Note,
     NoteSource,
@@ -17,8 +17,8 @@ from zettelkasten_mcp.models.schema import (
     NoteType,
     Tag,
 )
-from zettelkasten_mcp.services.search_service import SearchService
-from zettelkasten_mcp.services.zettel_service import ZettelService
+from parazettle_mcp.services.search_service import SearchService
+from parazettle_mcp.services.zettel_service import ZettelService
 
 logger = logging.getLogger(__name__)
 

@@ -7,9 +7,9 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import joinedload
 
-from zettelkasten_mcp.models.db_models import DBLink, DBNote
-from zettelkasten_mcp.models.schema import LinkType, Note, NoteType, Tag
-from zettelkasten_mcp.services.zettel_service import ZettelService
+from parazettle_mcp.models.db_models import DBLink, DBNote
+from parazettle_mcp.models.schema import LinkType, Note, NoteType, Tag
+from parazettle_mcp.services.zettel_service import ZettelService
 
 
 @dataclass

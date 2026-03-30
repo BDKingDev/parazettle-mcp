@@ -6,10 +6,10 @@ import os
 import sys
 from pathlib import Path
 
-from zettelkasten_mcp.config import config
-from zettelkasten_mcp.models.db_models import init_db
-from zettelkasten_mcp.server.mcp_server import ZettelkastenMcpServer
-from zettelkasten_mcp.utils import setup_logging
+from parazettle_mcp.config import config
+from parazettle_mcp.models.db_models import init_db
+from parazettle_mcp.server.mcp_server import ZettelkastenMcpServer
+from parazettle_mcp.utils import setup_logging
 
 
 def parse_args():

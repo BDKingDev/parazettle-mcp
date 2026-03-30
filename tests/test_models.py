@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from zettelkasten_mcp.models.schema import (
+from parazettle_mcp.models.schema import (
     Link,
     LinkType,
     Note,

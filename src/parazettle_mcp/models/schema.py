@@ -284,7 +284,7 @@ class Note(BaseModel):
 
     def to_markdown(self) -> str:
         """Convert the note to a markdown formatted string."""
-        from zettelkasten_mcp.config import config
+        from parazettle_mcp.config import config
 
         # Format tags
         tags_str = ", ".join([tag.name for tag in self.tags])

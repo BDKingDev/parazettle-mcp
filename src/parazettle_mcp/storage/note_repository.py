@@ -13,8 +13,8 @@ import frontmatter
 from sqlalchemy import and_, create_engine, func, or_, select, text
 from sqlalchemy.orm import Session, joinedload
 
-from zettelkasten_mcp.config import config
-from zettelkasten_mcp.models.db_models import (
+from parazettle_mcp.config import config
+from parazettle_mcp.models.db_models import (
     Base,
     DBLink,
     DBNote,
@@ -22,7 +22,7 @@ from zettelkasten_mcp.models.db_models import (
     get_session_factory,
     init_db,
 )
-from zettelkasten_mcp.models.schema import (
+from parazettle_mcp.models.schema import (
     Link,
     LinkType,
     Note,
@@ -31,7 +31,7 @@ from zettelkasten_mcp.models.schema import (
     NoteType,
     Tag,
 )
-from zettelkasten_mcp.storage.base import Repository
+from parazettle_mcp.storage.base import Repository
 
 logger = logging.getLogger(__name__)
 
@@ -539,7 +539,7 @@ class NoteRepository(Repository[Note]):
         """Create a new note."""
         # Ensure the note has an ID
         if not note.id:
-            from zettelkasten_mcp.models.schema import generate_id
+            from parazettle_mcp.models.schema import generate_id
 
             note.id = generate_id()
 
