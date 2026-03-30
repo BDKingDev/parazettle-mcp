@@ -7,89 +7,96 @@ Purpose:
 This file is designed to be consumed by AI systems for analysis, review,
 or other automated processes. It solely serves the purpose of background
 information and should NOT under any circumstances leak into the user's
-interaction with the AI when actually USING the Zettelkasten MCP tools to
+interaction with the AI when actually USING the Parazettle MCP tools to
 process, explore or synthesize user-supplied information.
 
 Content:
 --------
 
-# Link Types In Zettelkasten MCP Server
+Link Types in Parazettle MCP
+-----------------------------
 
-The Zettelkasten MCP server uses a comprehensive semantic linking system that creates meaningful connections between notes. Each link type represents a specific relationship, allowing for a rich, multi-dimensional knowledge graph.
+Parazettle uses a semantic linking system for knowledge relationships and a structural linking system for PARA/GTD hierarchy. Links are directional and most have semantic inverses.
 
-## Primary Link Types and Their Inverses
+Semantic Link Types (knowledge graph)
+--------------------------------------
 
-| Primary Link Type | Inverse Link Type | Relationship Description |
-|-------------------|-------------------|--------------------------|
-| `reference` | `reference` | Simple reference to related information (symmetric relationship) |
+| Primary | Inverse | Relationship Description |
+| --- | --- | --- |
+| `reference` | `reference` | Simple reference to related information (symmetric) |
 | `extends` | `extended_by` | One note builds upon or develops concepts from another |
 | `refines` | `refined_by` | One note clarifies or improves upon another |
 | `contradicts` | `contradicted_by` | One note presents opposing views to another |
 | `questions` | `questioned_by` | One note poses questions about another |
 | `supports` | `supported_by` | One note provides evidence for another |
-| `related` | `related` | Generic relationship (symmetric relationship) |
+| `related` | `related` | Generic thematic connection (symmetric) |
 
-## Using Link Types
+Structural Link Types (PARA/GTD)
+----------------------------------
 
-When creating links between notes with `zk_create_link`, you can specify the link type to establish the appropriate relationship:
+| Primary | Inverse | Relationship Description |
+| --- | --- | --- |
+| `part_of` | `has_part` | This task or note belongs to a project or area |
+| `blocks` | `blocked_by` | This task blocks another task from starting |
 
-```
-zk_create_link source_id=202504010930 target_id=202503251045 link_type=supports
-```
+Structural links are created automatically by `pzk_create_task` (PART\_OF to project) and `pzk_create_project` (PART\_OF to area). They can also be created manually with `pzk_create_link`.
 
-The link type parameter can be any of the values from either the "Primary Link Type" or "Inverse Link Type" columns in the table above.
+Using Link Types
+-----------------
 
-## Bidirectional Links
-
-When creating links, you can set `bidirectional=true` to automatically create a complementary link in the reverse direction using the semantic inverse:
-
-```
-zk_create_link source_id=202504010930 target_id=202503251045 link_type=supports bidirectional=true
-```
-
-This will create:
-1. A `supports` link from 202504010930 to 202503251045
-2. A `supported_by` link from 202503251045 to 202504010930
-
-The system automatically applies the correct semantic inverse relationship:
-- If note A `extends` note B, then note B is `extended_by` note A
-- If note A `contradicts` note B, then note B is `contradicted_by` note A
-- And so on for all relationship pairs
-
-For symmetric relationships (`reference` and `related`), the same link type is used in both directions.
-
-## Custom Bidirectional Types
-
-If you want to specify a custom relationship type for the reverse direction, use the `bidirectional_type` parameter:
-
-```
-zk_create_link source_id=202504010930 target_id=202503251045 link_type=supports bidirectional=true bidirectional_type=questions
+```text
+pzk_create_link source_id=NOTE_A target_id=NOTE_B link_type=supports
 ```
 
-This would create:
-1. A `supports` link from 202504010930 to 202503251045
-2. A `questions` link from 202503251045 to 202504010930
+Any value from either the Primary or Inverse column is valid as `link_type`.
 
-## Best Practices
+Bidirectional Links
+--------------------
 
-- **Choose Specific Link Types**: Use specific semantic relationships rather than generic `reference` or `related` when possible
-- **Consider Directionality**: The direction of links matters - pay attention to which note is the source and which is the target
-- **Use Inverse Pairs Consistently**: Maintain semantic consistency by using the proper pairs of relationships
-- **Create Strategic Bidirectional Links**: Not all links need to be bidirectional - use this feature for important conceptual relationships
-- **Build Knowledge Paths**: Create intentional sequences of links that guide through a line of thinking
-- **Balance Link Types**: A healthy Zettelkasten uses a mix of supportive, contradictory, and questioning links
+Set `bidirectional=true` to automatically create the semantic inverse in the reverse direction:
 
-## Link Type Meanings in Detail
+```text
+pzk_create_link source_id=NOTE_A target_id=NOTE_B link_type=supports bidirectional=true
+```
 
-- **reference/reference**: Simple connection between related notes without implying a specific relationship
-- **extends/extended_by**: Indicates development or elaboration - the source note builds upon concepts in the target note
-- **refines/refined_by**: Indicates improvement or clarification - the source note makes the target note's concepts more precise
-- **contradicts/contradicted_by**: Indicates opposition or conflict - the source note challenges the target note's concepts
-- **questions/questioned_by**: Indicates inquiry or uncertainty - the source note raises questions about the target note
-- **supports/supported_by**: Indicates evidence or backing - the source note provides support for the target note's claims
-- **related/related**: Indicates a general thematic connection when more specific relationships don't apply
+This creates:
 
-By using this rich semantic linking system, your Zettelkasten becomes a sophisticated network of ideas with clearly defined relationships, facilitating deeper understanding and novel insights.
+1. A `supports` link from NOTE\_A → NOTE\_B
+2. A `supported_by` link from NOTE\_B → NOTE\_A
+
+For symmetric types (`reference`, `related`), both directions use the same link type.
+
+Custom Bidirectional Types
+---------------------------
+
+Use `bidirectional_type` to specify a non-default inverse:
+
+```text
+pzk_create_link source_id=NOTE_A target_id=NOTE_B link_type=supports bidirectional=true bidirectional_type=questions
+```
+
+Best Practices
+---------------
+
+- **Choose specific types**: Use `supports`, `extends`, or `contradicts` rather than falling back to `reference`
+- **Direction matters**: The source note is the one making the claim about the relationship
+- **Bidirectional for important relationships**: Use `bidirectional=true` for conceptual relationships that should be navigable both ways
+- **Structural links are auto-managed**: `part_of`/`has_part` links are created by the PARA tools — avoid duplicating them manually
+- **Build knowledge paths**: Sequential `extends` or `supports` links that develop an argument over multiple notes
+- **Balance link types**: A healthy vault uses supportive, contradictory, and questioning links — not just references
+
+Link Type Meanings in Detail
+------------------------------
+
+- **reference/reference**: Simple connection — no specific relationship implied
+- **extends/extended_by**: Source builds upon and develops the target's concepts
+- **refines/refined_by**: Source makes the target's concepts more precise or corrects them
+- **contradicts/contradicted_by**: Source challenges or opposes the target's claims
+- **questions/questioned_by**: Source raises uncertainty or inquiry about the target
+- **supports/supported_by**: Source provides evidence or backing for the target's claims
+- **related/related**: Thematic connection when no more specific type applies
+- **part_of/has_part**: PARA structural relationship — task or note belongs to a project or area
+- **blocks/blocked_by**: GTD dependency — source must complete before target can start
 
 ================================================================
 End of Project Knowledge File
