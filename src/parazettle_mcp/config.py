@@ -1,24 +1,26 @@
 """Configuration module for the Zettelkasten MCP server."""
+
 import os
 from pathlib import Path
 from typing import Optional
+
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 # Load environment variables
 load_dotenv()
 
+
 class ZettelkastenConfig(BaseModel):
     """Configuration for the Zettelkasten server."""
+
     # Base directory for the project
     base_dir: Path = Field(
         default_factory=lambda: Path(os.getenv("ZETTELKASTEN_BASE_DIR", "."))
     )
     # Storage configuration
     notes_dir: Path = Field(
-        default_factory=lambda: Path(
-            os.getenv("ZETTELKASTEN_NOTES_DIR", "data/notes")
-        )
+        default_factory=lambda: Path(os.getenv("ZETTELKASTEN_NOTES_DIR", "data/notes"))
     )
     # Database configuration
     database_path: Path = Field(
@@ -28,9 +30,9 @@ class ZettelkastenConfig(BaseModel):
     )
     # Server configuration
     server_name: str = Field(
-        default=os.getenv("ZETTELKASTEN_SERVER_NAME", "zettelkasten-mcp")
+        default=os.getenv("ZETTELKASTEN_SERVER_NAME", "parazettle")
     )
-    server_version: str = Field(default="1.2.1")
+    server_version: str = Field(default="1.3.0")
     # Date format for ID generation (using ISO format for timestamps)
     id_date_format: str = Field(default="%Y%m%dT%H%M%S")
     # Default note template
@@ -46,18 +48,19 @@ class ZettelkastenConfig(BaseModel):
             "{links}\n"
         )
     )
-    
+
     def get_absolute_path(self, path: Path) -> Path:
         """Convert a relative path to an absolute path based on base_dir."""
         if path.is_absolute():
             return path
         return self.base_dir / path
-    
+
     def get_db_url(self) -> str:
         """Get the database URL for SQLite."""
         db_path = self.get_absolute_path(self.database_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{db_path}"
+
 
 # Create a global config instance
 config = ZettelkastenConfig()
