@@ -721,22 +721,87 @@ class ZettelkastenMcpServer:
             except Exception as e:
                 return self.format_error_response(e)
 
-        @self.mcp.tool(name="pzk_update_task_status")
-        def pzk_update_task_status(task_id: str, status: str) -> str:
-            """Update the status of a task.
+        @self.mcp.tool(name="pzk_update_task")
+        def pzk_update_task(
+            task_id: str,
+            status: Optional[str] = None,
+            due_date: Optional[str] = None,
+            remind_at: Optional[str] = None,
+            priority: Optional[int] = None,
+            estimated_minutes: Optional[int] = None,
+            recurrence_rule: Optional[str] = None,
+            tags: Optional[str] = None,
+        ) -> str:
+            """Update any fields on an existing task.
             Args:
                 task_id: ID of the task note
-                status: inbox, ready, active, waiting, someday, done, cancelled
+                status: inbox, ready, scheduled, active, waiting, someday, done, cancelled
+                due_date: Due date YYYY-MM-DD
+                remind_at: Reminder date YYYY-MM-DD
+                priority: 1 (low) to 4 (critical)
+                estimated_minutes: Estimated effort in minutes
+                recurrence_rule: daily, weekly, monthly, quarterly, yearly
+                tags: Comma-separated tags (replaces existing tags)
             """
             try:
-                try:
-                    new_status = NoteStatus(status.lower())
-                except ValueError:
-                    return f"Invalid status: {status}. Valid: {', '.join(s.value for s in NoteStatus)}"
-                updated = self.zettel_service.update_task_status(task_id, new_status)
-                msg = f"Task {task_id} status updated to '{new_status.value}'."
-                if new_status == NoteStatus.DONE and updated.recurrence_rule:
-                    msg += " New recurring instance created."
+                import datetime as _dt
+
+                task = self.zettel_service.get_note(task_id)
+                if not task:
+                    return f"Task not found: {task_id}"
+                if task.note_type != NoteType.TASK:
+                    return f"Note {task_id} is not a task (type: {task.note_type.value})"
+
+                # Validate all inputs before applying any changes
+                new_status = None
+                if status is not None:
+                    try:
+                        new_status = NoteStatus(status.lower())
+                    except ValueError:
+                        return f"Invalid status: {status}. Valid: {', '.join(s.value for s in NoteStatus)}"
+                parsed_due = None
+                if due_date is not None:
+                    try:
+                        parsed_due = _dt.date.fromisoformat(due_date)
+                    except ValueError:
+                        return f"Invalid due_date: {due_date}. Use YYYY-MM-DD."
+                parsed_remind = None
+                if remind_at is not None:
+                    try:
+                        parsed_remind = _dt.date.fromisoformat(remind_at)
+                    except ValueError:
+                        return f"Invalid remind_at: {remind_at}. Use YYYY-MM-DD."
+
+                # Apply non-status fields directly
+                if parsed_due is not None:
+                    task.due_date = parsed_due
+                if parsed_remind is not None:
+                    task.remind_at = parsed_remind
+                if priority is not None:
+                    task.priority = priority
+                if estimated_minutes is not None:
+                    task.estimated_minutes = estimated_minutes
+                if recurrence_rule is not None:
+                    task.recurrence_rule = recurrence_rule
+                if tags is not None:
+                    from parazettle_mcp.models.schema import Tag
+                    task.tags = [Tag(name=t.strip()) for t in tags.split(",") if t.strip()]
+
+                # Persist non-status changes first so they are included in any
+                # spawned recurring instance (e.g. updated due_date carries over)
+                if any(x is not None for x in [parsed_due, parsed_remind, priority,
+                                                estimated_minutes, recurrence_rule, tags]):
+                    self.zettel_service.repository.update(task)
+
+                # Route status changes through the service to preserve business
+                # logic — specifically, completing a recurring task spawns the next instance
+                msg = f"Task {task_id} updated successfully."
+                if new_status is not None:
+                    updated = self.zettel_service.update_task_status(task_id, new_status)
+                    msg += f" Status set to '{new_status.value}'."
+                    if new_status == NoteStatus.DONE and updated.recurrence_rule:
+                        msg += " New recurring instance created."
+
                 return msg
             except Exception as e:
                 return self.format_error_response(e)
