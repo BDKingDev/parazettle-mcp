@@ -734,6 +734,14 @@ class NoteRepository(Repository[Note]):
             raise IOError(f"Failed to delete note {id}: {e}") from e
 
         _cache_evict(str(file_path))
+
+        # Remove outgoing links from all notes that linked TO this note,
+        # so their markdown files stay consistent with the DB.
+        source_notes = self.find_linked_notes(id, "incoming")
+        for source_note in source_notes:
+            source_note.remove_link(id)
+            self.update(source_note)
+
         # Delete from database
         with self.session_factory() as session:
             # Delete note and its relationships

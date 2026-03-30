@@ -120,6 +120,7 @@ All tools are prefixed `pzk_`.
 | Tool | Description |
 | --- | --- |
 | `pzk_create_area` | Create an area note with optional review cadence |
+| `pzk_get_area` | Get an area with linked projects and task counts |
 | `pzk_list_areas` | List all areas |
 | `pzk_create_project` | Create a project linked to an area |
 | `pzk_list_projects` | List active projects sorted by deadline |

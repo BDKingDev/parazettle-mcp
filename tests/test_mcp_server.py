@@ -122,8 +122,7 @@ class TestMcpServer:
         get_note_func = self.registered_tools["pzk_get_note"]
         result = get_note_func(identifier="test123")
 
-        # Verify result
-        assert "# Test Note" in result
+        # Verify result — title appears in content body, not duplicated in header
         assert "ID: test123" in result
         assert "Test content" in result
 

@@ -882,8 +882,7 @@ class ZettelkastenMcpServer:
                     s = t.status.value if t.status else "none"
                     counts[s] = counts.get(s, 0) + 1
                 outcome = project.metadata.get("outcome", "")
-                out = f"# {project.title}\n"
-                out += f"ID: {project.id}\n"
+                out = f"ID: {project.id}\n"
                 if outcome:
                     out += f"Outcome: {outcome}\n"
                 out += f"Tasks: {len(tasks)} total"
@@ -1005,6 +1004,36 @@ class ZettelkastenMcpServer:
                     if cadence:
                         out += f"   Cadence: {cadence}\n"
                     out += "\n"
+                return out
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="pzk_get_area")
+        def pzk_get_area(area_id: str) -> str:
+            """Get an area note with its linked projects and open task counts.
+            Args:
+                area_id: ID of the area note
+            """
+            try:
+                area = self.zettel_service.get_note(area_id)
+                if not area:
+                    return f"Area not found: {area_id}"
+                if area.note_type != NoteType.AREA:
+                    return f"Note {area_id} is not an area (type: {area.note_type.value})"
+                projects = self.zettel_service.search_notes(
+                    note_type=NoteType.PROJECT, area_id=area_id
+                )
+                cadence = area.metadata.get("cadence", "")
+                out = f"ID: {area.id}\n"
+                if cadence:
+                    out += f"Cadence: {cadence}\n"
+                out += f"Projects: {len(projects)}\n"
+                out += f"\n{area.content}\n"
+                if projects:
+                    out += "\n## Projects\n"
+                    for p in projects:
+                        task_count = len(self.zettel_service.get_project_tasks(p.id))
+                        out += f"- {p.title} (ID: {p.id}) — {task_count} task(s)\n"
                 return out
             except Exception as e:
                 return self.format_error_response(e)
