@@ -2,7 +2,7 @@
 
 import pytest
 
-from parazettel_mcp.models.schema import LinkType, NoteType
+from parazettel_mcp.models.schema import LinkType, NoteStatus, NoteType
 
 
 def test_create_note(zettel_service):
@@ -13,12 +13,14 @@ def test_create_note(zettel_service):
         content="Testing note creation through the service.",
         note_type=NoteType.PERMANENT,
         tags=["service", "test"],
+        status=NoteStatus.INBOX,
     )
     # Verify note was created
     assert note.id is not None
     assert note.title == "Service Test Note"
     assert note.content == "Testing note creation through the service."
     assert note.note_type == NoteType.PERMANENT
+    assert note.status == NoteStatus.INBOX
     assert len(note.tags) == 2
     assert {tag.name for tag in note.tags} == {"service", "test"}
 
@@ -55,6 +57,7 @@ def test_update_note(zettel_service):
         content="Testing note update through the service.",
         note_type=NoteType.PERMANENT,
         tags=["service", "update"],
+        status=NoteStatus.INBOX,
     )
     # Update the note
     updated_note = zettel_service.update_note(
@@ -62,12 +65,17 @@ def test_update_note(zettel_service):
         title="Updated Service Note",
         content="This note has been updated through the service.",
         tags=["service", "updated"],
+        status=NoteStatus.EVERGREEN,
     )
     # Verify note was updated
     assert updated_note.id == note.id
     assert updated_note.title == "Updated Service Note"
     assert "This note has been updated through the service." in updated_note.content
+    assert updated_note.status == NoteStatus.EVERGREEN
     assert {tag.name for tag in updated_note.tags} == {"service", "updated"}
+
+    cleared_note = zettel_service.update_note(note_id=note.id, status=None)
+    assert cleared_note.status is None
 
 
 def test_delete_note(zettel_service):

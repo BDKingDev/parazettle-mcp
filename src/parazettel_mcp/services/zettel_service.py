@@ -18,6 +18,7 @@ from parazettel_mcp.models.schema import (
 from parazettel_mcp.storage.note_repository import NoteRepository
 
 logger = logging.getLogger(__name__)
+_UNSET = object()
 
 
 class ZettelService:
@@ -41,6 +42,7 @@ class ZettelService:
         tags: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         source: NoteSource = NoteSource.MANUAL,
+        status: Optional[NoteStatus] = None,
     ) -> Note:
         """Create a new note."""
         if not title:
@@ -56,6 +58,7 @@ class ZettelService:
             tags=[Tag(name=tag) for tag in (tags or [])],
             metadata=metadata or {},
             source=source,
+            status=status,
         )
 
         # Save to repository
@@ -76,6 +79,7 @@ class ZettelService:
         content: Optional[str] = None,
         note_type: Optional[NoteType] = None,
         tags: Optional[List[str]] = None,
+        status: Any = _UNSET,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Note:
         """Update an existing note."""
@@ -92,6 +96,8 @@ class ZettelService:
             note.note_type = note_type
         if tags is not None:
             note.tags = [Tag(name=tag) for tag in tags]
+        if status is not _UNSET:
+            note.status = status
         if metadata is not None:
             note.metadata = metadata
 

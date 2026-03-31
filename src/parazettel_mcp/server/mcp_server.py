@@ -83,6 +83,7 @@ class ZettelkastenMcpServer:
             note_type: str = "permanent",
             tags: Optional[str] = None,
             source: Optional[str] = None,
+            status: Optional[str] = None,
         ) -> str:
             """Create a new Zettelkasten note.
             Args:
@@ -93,6 +94,7 @@ class ZettelkastenMcpServer:
                     For tasks prefer pzk_create_task which exposes task-specific fields.
                 tags: Comma-separated list of tags (optional)
                 source: Origin of the note. Required for all note types except area.
+                status: Optional workflow status such as inbox, evergreen, or archived.
             """
             try:
                 # Convert note_type string to enum
@@ -121,6 +123,18 @@ class ZettelkastenMcpServer:
                         f"Valid: {', '.join(s.value for s in NoteSource)}"
                     )
 
+                note_status = None
+                if status is not None:
+                    normalized_status = status.strip().lower()
+                    if normalized_status:
+                        try:
+                            note_status = NoteStatus(normalized_status)
+                        except ValueError:
+                            return (
+                                f"Invalid status: {status}. "
+                                f"Valid: {', '.join(s.value for s in NoteStatus)}"
+                            )
+
                 # Create the note
                 note = self.zettel_service.create_note(
                     title=title,
@@ -128,6 +142,7 @@ class ZettelkastenMcpServer:
                     note_type=note_type_enum,
                     tags=tag_list,
                     source=note_source,
+                    status=note_status,
                 )
                 return f"Note created successfully with ID: {note.id}"
             except Exception as e:
@@ -171,6 +186,7 @@ class ZettelkastenMcpServer:
             content: Optional[str] = None,
             note_type: Optional[str] = None,
             tags: Optional[str] = None,
+            status: Optional[str] = None,
         ) -> str:
             """Update an existing note.
             Args:
@@ -179,6 +195,7 @@ class ZettelkastenMcpServer:
                 content: New content (optional)
                 note_type: New note type (optional)
                 tags: New comma-separated list of tags (optional)
+                status: New workflow status (optional). Pass empty string to clear it.
             """
             try:
                 # Get the note
@@ -199,14 +216,28 @@ class ZettelkastenMcpServer:
                 if tags is not None:  # Allow empty string to clear tags
                     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
 
+                update_kwargs = {
+                    "note_id": note_id,
+                    "title": title,
+                    "content": content,
+                    "note_type": note_type_enum,
+                    "tags": tag_list,
+                }
+                if status is not None:
+                    normalized_status = status.strip().lower()
+                    if normalized_status:
+                        try:
+                            update_kwargs["status"] = NoteStatus(normalized_status)
+                        except ValueError:
+                            return (
+                                f"Invalid status: {status}. "
+                                f"Valid: {', '.join(s.value for s in NoteStatus)}"
+                            )
+                    else:
+                        update_kwargs["status"] = None
+
                 # Update the note
-                updated_note = self.zettel_service.update_note(
-                    note_id=note_id,
-                    title=title,
-                    content=content,
-                    note_type=note_type_enum,
-                    tags=tag_list,
-                )
+                updated_note = self.zettel_service.update_note(**update_kwargs)
                 return f"Note updated successfully: {updated_note.id}"
             except Exception as e:
                 return self.format_error_response(e)

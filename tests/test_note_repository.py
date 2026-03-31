@@ -2,7 +2,7 @@
 
 import pytest
 
-from parazettel_mcp.models.schema import LinkType, Note, NoteType, Tag
+from parazettel_mcp.models.schema import LinkType, Note, NoteStatus, NoteType, Tag
 
 
 def test_create_note(note_repository):
@@ -58,6 +58,7 @@ def test_update_note(note_repository):
         content="This is a test note for updating.",
         note_type=NoteType.PERMANENT,
         tags=[Tag(name="test"), Tag(name="update")],
+        status=NoteStatus.INBOX,
     )
     # Save to repository
     saved_note = note_repository.create(note)
@@ -65,6 +66,7 @@ def test_update_note(note_repository):
     saved_note.title = "Updated Test Note"
     saved_note.content = "This note has been updated."
     saved_note.tags = [Tag(name="test"), Tag(name="updated")]
+    saved_note.status = NoteStatus.EVERGREEN
     # Save the update
     updated_note = note_repository.update(saved_note)
     # Retrieve the note again
@@ -76,7 +78,25 @@ def test_update_note(note_repository):
     # Note content includes the title as a markdown header - account for this
     expected_content = f"# {updated_note.title}\n\n{updated_note.content}"
     assert retrieved_note.content.strip() == expected_content.strip()
+    assert retrieved_note.status == NoteStatus.EVERGREEN
     assert {tag.name for tag in retrieved_note.tags} == {"test", "updated"}
+
+
+def test_create_note_persists_status(note_repository):
+    """Regular notes should persist workflow status through storage."""
+    note = Note(
+        title="Status Test Note",
+        content="This note starts in inbox.",
+        note_type=NoteType.PERMANENT,
+        status=NoteStatus.INBOX,
+        tags=[Tag(name="status")],
+    )
+
+    saved_note = note_repository.create(note)
+    retrieved_note = note_repository.get(saved_note.id)
+
+    assert retrieved_note is not None
+    assert retrieved_note.status == NoteStatus.INBOX
 
 
 def test_delete_note(note_repository):
