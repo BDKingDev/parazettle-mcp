@@ -276,7 +276,12 @@ class NoteRepository(Repository[Note]):
         }
 
         status_str = metadata.get("status")
-        status = NoteStatus(status_str) if status_str else None
+        status = None
+        if status_str:
+            try:
+                status = NoteStatus(str(status_str))
+            except ValueError:
+                status = None
 
         source_str = metadata.get("source", NoteSource.MANUAL.value)
         try:

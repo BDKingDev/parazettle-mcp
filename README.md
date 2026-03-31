@@ -96,7 +96,7 @@ All tools are prefixed `pzk_`.
 | `pzk_delete_note` | Delete a note |
 | `pzk_create_link` | Create a typed link between notes |
 | `pzk_remove_link` | Remove a link |
-| `pzk_search_notes` | Search by text, tags, type, status, project, area |
+| `pzk_search_notes` | Search by text, tags, type, status, project_id, or area_id |
 | `pzk_get_linked_notes` | Get notes linked to/from a note |
 | `pzk_get_all_tags` | List all tags |
 | `pzk_find_similar_notes` | Find notes similar to a given note |
@@ -110,7 +110,7 @@ All tools are prefixed `pzk_`.
 | Tool | Description |
 | --- | --- |
 | `pzk_create_task` | Create a task with status, due date, priority, energy, context, reminders |
-| `pzk_update_task_status` | Change a task's status; auto-spawns recurring instances |
+| `pzk_update_task` | Update task fields or status; recurring completion spawns the next instance |
 | `pzk_get_tasks` | Query tasks by status, project, due date, priority |
 | `pzk_get_todays_tasks` | Tasks due today + overdue, sorted by priority |
 | `pzk_get_reminders` | Notes and tasks with `remind_at` ≤ today |
@@ -203,7 +203,7 @@ See [`docs/mcp-testing-guide.md`](docs/mcp-testing-guide.md) for a full tool-by-
 | Document | Description |
 | --- | --- |
 | [`docs/para-gtd-guide.md`](docs/para-gtd-guide.md) | PARA/GTD workflow — areas, projects, tasks, today view, reminders |
-| [`docs/mcp-testing-guide.md`](docs/mcp-testing-guide.md) | All 25 tools with example calls and expected output |
+| [`docs/mcp-testing-guide.md`](docs/mcp-testing-guide.md) | All 26 tools with example calls and expected output |
 | [`docs/project-knowledge/user/link-types-in-zettelkasten-mcp-server.md`](docs/project-knowledge/user/link-types-in-zettelkasten-mcp-server.md) | Full link type reference |
 | [`docs/prompts/system/system-prompt.md`](docs/prompts/system/system-prompt.md) | System prompt for Claude |
 | [`docs/prompts/chat/`](docs/prompts/chat/) | Chat prompts for knowledge workflows |

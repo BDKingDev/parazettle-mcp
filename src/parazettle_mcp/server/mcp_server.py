@@ -82,6 +82,7 @@ class ZettelkastenMcpServer:
             content: str,
             note_type: str = "permanent",
             tags: Optional[str] = None,
+            source: Optional[str] = None,
         ) -> str:
             """Create a new Zettelkasten note.
             Args:
@@ -89,9 +90,9 @@ class ZettelkastenMcpServer:
                 content: The main content of the note
                 note_type: Type of note. Knowledge types: fleeting, literature, permanent,
                     structure, hub. Action-item types: task, project, area.
-                    For tasks prefer zk_create_task which exposes task-specific fields.
-                note_type: Type of note (fleeting, literature, permanent, structure, hub)
+                    For tasks prefer pzk_create_task which exposes task-specific fields.
                 tags: Comma-separated list of tags (optional)
+                source: Origin of the note. Required for all note types except area.
             """
             try:
                 # Convert note_type string to enum
@@ -105,12 +106,28 @@ class ZettelkastenMcpServer:
                 if tags:
                     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
 
+                note_source = NoteSource.MANUAL
+                if source:
+                    try:
+                        note_source = NoteSource(source.lower())
+                    except ValueError:
+                        return (
+                            f"Invalid source: {source}. "
+                            f"Valid: {', '.join(s.value for s in NoteSource)}"
+                        )
+                elif note_type_enum != NoteType.AREA:
+                    return (
+                        "source is required for all note types except area. "
+                        f"Valid: {', '.join(s.value for s in NoteSource)}"
+                    )
+
                 # Create the note
                 note = self.zettel_service.create_note(
                     title=title,
                     content=content,
                     note_type=note_type_enum,
                     tags=tag_list,
+                    source=note_source,
                 )
                 return f"Note created successfully with ID: {note.id}"
             except Exception as e:
@@ -289,13 +306,19 @@ class ZettelkastenMcpServer:
             query: Optional[str] = None,
             tags: Optional[str] = None,
             note_type: Optional[str] = None,
+            status: Optional[str] = None,
+            project_id: Optional[str] = None,
+            area_id: Optional[str] = None,
             limit: int = 10,
         ) -> str:
-            """Search for notes by text, tags, or type.
+            """Search for notes by text, tags, type, status, or PARA routing fields.
             Args:
                 query: Text to search for in titles and content
                 tags: Comma-separated list of tags to filter by
                 note_type: Type of note to filter by
+                status: Filter by workflow status
+                project_id: Filter to notes routed to this project
+                area_id: Filter to notes routed to this area
                 limit: Maximum number of results to return
             """
             try:
@@ -312,9 +335,21 @@ class ZettelkastenMcpServer:
                     except ValueError:
                         return f"Invalid note type: {note_type}. Valid types are: {', '.join(t.value for t in NoteType)}"
 
+                status_enum = None
+                if status:
+                    try:
+                        status_enum = NoteStatus(status.lower())
+                    except ValueError:
+                        return f"Invalid status: {status}. Valid: {', '.join(s.value for s in NoteStatus)}"
+
                 # Perform search
                 results = self.search_service.search_combined(
-                    text=query, tags=tag_list, note_type=note_type_enum
+                    text=query,
+                    tags=tag_list,
+                    note_type=note_type_enum,
+                    status=status_enum,
+                    project_id=project_id,
+                    area_id=area_id,
                 )
 
                 # Limit results
@@ -717,7 +752,7 @@ class ZettelkastenMcpServer:
                     estimated_minutes=estimated_minutes,
                     source=note_source,
                 )
-                return f"Task created successfully with ID: {task.id}"
+                return f"Task created successfully: {task.title} (ID: {task.id})"
             except Exception as e:
                 return self.format_error_response(e)
 
@@ -733,6 +768,12 @@ class ZettelkastenMcpServer:
             tags: Optional[str] = None,
         ) -> str:
             """Update any fields on an existing task.
+
+            This is the only task-update tool. Use it for both ordinary field edits and
+            status transitions. When a recurring task is marked done, the next instance
+            is spawned automatically after non-status edits are persisted. Passing tags
+            replaces the task's existing tag list.
+
             Args:
                 task_id: ID of the task note
                 status: inbox, ready, scheduled, active, waiting, someday, done, cancelled
@@ -887,6 +928,7 @@ class ZettelkastenMcpServer:
         def pzk_create_project(
             title: str,
             content: str,
+            source: str,
             area_id: Optional[str] = None,
             outcome: Optional[str] = None,
             deadline: Optional[str] = None,
@@ -896,6 +938,7 @@ class ZettelkastenMcpServer:
             Args:
                 title: Project title
                 content: Project description
+                source: Origin of the project note
                 area_id: ID of the area this project belongs to
                 outcome: The desired outcome/goal
                 deadline: Target completion date (YYYY-MM-DD)
@@ -904,6 +947,13 @@ class ZettelkastenMcpServer:
             try:
                 import datetime as _dt
 
+                try:
+                    note_source = NoteSource(source.lower())
+                except ValueError:
+                    return (
+                        f"Invalid source: {source}. "
+                        f"Valid: {', '.join(s.value for s in NoteSource)}"
+                    )
                 if area_id:
                     area = self.zettel_service.get_note(area_id)
                     if not area or area.note_type != NoteType.AREA:
@@ -924,6 +974,7 @@ class ZettelkastenMcpServer:
                     deadline=parsed_deadline,
                     area_id=area_id,
                     tags=tag_list,
+                    source=note_source,
                 )
                 return f"Project created successfully with ID: {project.id}"
             except Exception as e:

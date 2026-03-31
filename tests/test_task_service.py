@@ -82,8 +82,10 @@ def test_create_task_links_to_project(zettel_service, project):
     task = zettel_service.create_task(
         title="Draft roadmap", content="Write the roadmap doc.", project_id=project.id
     )
+    returned_task_links = {lnk.link_type for lnk in task.links}
     task_links = {lnk.link_type for lnk in zettel_service.get_note(task.id).links}
     project_links = {lnk.link_type for lnk in zettel_service.get_note(project.id).links}
+    assert LinkType.PART_OF in returned_task_links
     assert LinkType.PART_OF in task_links
     assert LinkType.HAS_PART in project_links
 
@@ -148,6 +150,11 @@ def test_complete_recurring_task_spawns_new(zettel_service, project):
     assert new_task.recurrence_rule == "weekly"
     assert new_task.due_date == today + datetime.timedelta(weeks=1)
     assert new_task.source == NoteSource.RECURRING
+    assert new_task.project_id == project.id
+    assert new_task.area_id == project.area_id
+    assert LinkType.PART_OF in {
+        link.link_type for link in zettel_service.get_note(new_task.id).links
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -291,10 +298,12 @@ def test_create_project_note(zettel_service, area):
         outcome="Feature live in production.",
         deadline=datetime.date(2026, 6, 30),
         area_id=area.id,
+        source=NoteSource.TRANSCRIPT,
     )
     assert project.note_type == NoteType.PROJECT
     assert project.metadata.get("outcome") == "Feature live in production."
     assert project.area_id == area.id
+    assert project.source == NoteSource.TRANSCRIPT
     project_links = {lnk.link_type for lnk in zettel_service.get_note(project.id).links}
     assert LinkType.PART_OF in project_links
 
@@ -378,6 +387,9 @@ def test_update_task_status_done_still_spawns_recurring(zettel_service, project)
     spawned = next(t for t in new_tasks if t.title == "Recurring via update")
     assert spawned.due_date == today + datetime.timedelta(weeks=1)
     assert spawned.priority == 2  # priority carried over from the completed instance
+    assert spawned.project_id == project.id
+    assert spawned.area_id == project.area_id
+    assert spawned.id in {task.id for task in zettel_service.get_project_tasks(project.id)}
 
 
 def test_update_task_appears_in_todays_tasks_after_due_date_set(zettel_service, project):

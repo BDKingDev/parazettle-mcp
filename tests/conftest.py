@@ -51,6 +51,7 @@ def note_repository(test_config):
     repository = NoteRepository(notes_dir=test_config.notes_dir)
     # Initialize is handled in constructor
     yield repository
+    repository.engine.dispose()
 
 
 @pytest.fixture

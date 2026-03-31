@@ -227,10 +227,10 @@ pzk_create_task
 When you complete it:
 
 ```text
-pzk_update_task_status task_id=<id> status="done"
+pzk_update_task task_id=<id> status="done"
 ```
 
-A new task is created with `due_date = 2026-04-04` and `status=ready`. The completed task is kept as a record.
+A new task is created with `due_date = 2026-04-04`, `status=ready`, and the same project linkage. The completed task is kept as a record.
 
 ---
 

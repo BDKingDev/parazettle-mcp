@@ -1,7 +1,7 @@
 from setuptools import find_packages, setup
 setup(
-    name="zettelkasten_mcp",
-    version="1.2.1",
+    name="parazettle-mcp",
+    version="0.4.0",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
     python_requires=">=3.10",
@@ -25,7 +25,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "zettelkasten-mcp=zettelkasten_mcp.main:main",
+            "parazettle-mcp=parazettle_mcp.main:main",
         ],
     },
 )

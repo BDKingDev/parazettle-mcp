@@ -205,6 +205,31 @@ def test_delete_removes_dangling_links_from_source_files(note_repository):
     assert all(lnk.target_id != saved_target.id for lnk in refreshed.links)
 
 
+def test_invalid_frontmatter_status_is_ignored_on_read_and_rebuild(note_repository):
+    """Malformed status frontmatter should not break reads or index rebuilds."""
+    bad_note_path = note_repository.notes_dir / "bad-status.md"
+    bad_note_path.write_text(
+        "---\n"
+        "id: bad-status\n"
+        "title: Bad Status\n"
+        "type: task\n"
+        "status: flying\n"
+        "project_id: project123\n"
+        "---\n"
+        "# Bad Status\n\n"
+        "This task has an invalid stored status.\n",
+        encoding="utf-8",
+    )
+
+    note_repository.rebuild_index()
+    note = note_repository.get("bad-status")
+
+    assert note is not None
+    assert note.title == "Bad Status"
+    assert note.note_type == NoteType.TASK
+    assert note.status is None
+
+
 # ---------------------------------------------------------------------------
 # Phase 1 data layer tests
 # ---------------------------------------------------------------------------

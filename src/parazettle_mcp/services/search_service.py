@@ -8,7 +8,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import joinedload
 
 from parazettle_mcp.models.db_models import DBLink, DBNote
-from parazettle_mcp.models.schema import LinkType, Note, NoteType, Tag
+from parazettle_mcp.models.schema import LinkType, Note, NoteStatus, NoteType, Tag
 from parazettle_mcp.services.zettel_service import ZettelService
 
 
@@ -241,33 +241,33 @@ class SearchService:
         text: Optional[str] = None,
         tags: Optional[List[str]] = None,
         note_type: Optional[NoteType] = None,
+        status: Optional[NoteStatus] = None,
+        project_id: Optional[str] = None,
+        area_id: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
     ) -> List[SearchResult]:
         """Perform a combined search with multiple criteria."""
-        # Start with all notes
-        all_notes = self.zettel_service.get_all_notes()
+        search_kwargs: Dict[str, Any] = {}
+        if tags:
+            search_kwargs["tags"] = tags
+        if note_type:
+            search_kwargs["note_type"] = note_type
+        if status:
+            search_kwargs["status"] = status
+        if project_id:
+            search_kwargs["project_id"] = project_id
+        if area_id:
+            search_kwargs["area_id"] = area_id
+        if start_date:
+            search_kwargs["created_after"] = start_date
+        if end_date:
+            search_kwargs["created_before"] = end_date
 
-        # Filter by criteria
+        all_notes = self.zettel_service.repository.search(**search_kwargs)
+
         filtered_notes = []
         for note in all_notes:
-            # Check note type
-            if note_type and note.note_type != note_type:
-                continue
-
-            # Check date range
-            if start_date and note.created_at < start_date:
-                continue
-            if end_date and note.created_at > end_date:
-                continue
-
-            # Check tags
-            if tags:
-                note_tag_names = {tag.name for tag in note.tags}
-                if not any(tag in note_tag_names for tag in tags):
-                    continue
-
-            # Made it through all filters
             filtered_notes.append(note)
 
         # If we have a text query, score the notes

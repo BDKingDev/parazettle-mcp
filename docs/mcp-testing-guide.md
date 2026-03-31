@@ -189,7 +189,7 @@ Creates a task with the full set of optional parameters.
 **Expected output:**
 
 ```
-Task created successfully with ID: {TASK_ID}
+Task created successfully: Write integration tests (ID: {TASK_ID})
 ```
 
 **Verify tags were auto-applied** using `pzk_get_note {TASK_ID}` — the note should have `@computer` and `high-energy` in its Tags line.
@@ -349,7 +349,9 @@ Reminders due (1):
 
 ### `pzk_update_task`
 
-Update any mutable field on an existing task — due date, priority, estimated minutes, status, remind\_at, recurrence\_rule, or tags.
+Update any mutable field on an existing task — title, due date, priority, estimated minutes, status, remind\_at, recurrence\_rule, or tags.
+
+`pzk_update_task` is the only task update tool. Use it for both ordinary field edits and status transitions.
 
 **Call (set a due date and priority):**
 
@@ -367,6 +369,30 @@ Update any mutable field on an existing task — due date, priority, estimated m
 ```
 Task {TASK_ID} updated successfully.
 ```
+
+**Call (replace tags):**
+
+```json
+{
+  "task_id": "{TASK_ID}",
+  "tags": ["review", "weekly"]
+}
+```
+
+Passing `tags` replaces the task's existing tags with the provided list.
+
+**Call (complete a recurring task after editing other fields):**
+
+```json
+{
+  "task_id": "{RECURRING_TASK_ID}",
+  "status": "done",
+  "priority": 2,
+  "due_date": "2026-04-04"
+}
+```
+
+For recurring tasks, non-status edits are applied first, then marking the task `done` spawns the next instance. The spawned task keeps the same title, project, area, recurrence rule, and PARA linkage.
 
 **Call (invalid due date — error path):**
 
@@ -400,63 +426,6 @@ Note {KNOWLEDGE_NOTE_ID} is not a task (type: permanent)
 Verify the update took effect: call `pzk_get_note {TASK_ID}` and confirm the new `Due:` and priority values appear.
 
 Verify the task now surfaces in `pzk_get_todays_tasks` if `due_date` was set to today.
-
----
-
-### `pzk_update_task_status` — non-recurring
-
-Marks a task done. No new task spawned.
-
-**Call:**
-
-```json
-{
-  "task_id": "{OVERDUE_TASK_ID}",
-  "status": "done"
-}
-```
-
-**Expected output:**
-
-```
-Task {OVERDUE_TASK_ID} status updated to 'done'.
-```
-
-No mention of a new instance.
-
----
-
-### `pzk_update_task_status` — recurring
-
-Create a recurring task first:
-
-```json
-{
-  "title": "Weekly review",
-  "content": "Review open tasks and project status.",
-  "project_id": "{PROJECT_ID}",
-  "due_date": "2026-03-26",
-  "recurrence_rule": "weekly",
-  "status": "ready"
-}
-```
-
-Then complete it:
-
-```json
-{
-  "task_id": "{RECURRING_TASK_ID}",
-  "status": "done"
-}
-```
-
-**Expected output:**
-
-```
-Task {RECURRING_TASK_ID} status updated to 'done'. New recurring instance created.
-```
-
-Verify the new instance with `pzk_get_tasks status="ready"` — a new "Weekly review" task should appear with `due_date: 2026-04-02`.
 
 ---
 
@@ -647,6 +616,36 @@ Returns only task-type notes.
 ```
 
 Returns notes tagged with `zettelkasten`.
+
+**Call (combined filters):**
+
+```json
+{
+  "query": "python",
+  "tags": ["python", "javascript"],
+  "note_type": "task",
+  "status": "ready",
+  "project_id": "{PROJECT_ID}",
+  "area_id": "{AREA_ID}",
+  "limit": 10
+}
+```
+
+All provided filters are combined with `AND`, except `tags`, which still match when any supplied tag is present.
+
+**Call (invalid status — error path):**
+
+```json
+{
+  "status": "flying"
+}
+```
+
+**Expected output:**
+
+```
+Invalid status: flying. Valid values are: active, archived, cancelled, done, draft, evergreen, inbox, on_hold, ready, reference, someday, waiting
+```
 
 ---
 
@@ -859,8 +858,7 @@ Change in note count: 0
 | `pzk_get_project` | project\_id | — |
 | `pzk_get_project_tasks` | project\_id | status, limit |
 | `pzk_create_task` | title, content, project\_id | status, due\_date, priority, energy\_level, context, remind\_at, recurrence\_rule |
-| `pzk_update_task` | task\_id | due\_date, priority, status, remind\_at, estimated\_minutes, recurrence\_rule, tags |
-| `pzk_update_task_status` | task\_id, status | — |
+| `pzk_update_task` | task\_id | title, due\_date, priority, status, remind\_at, estimated\_minutes, recurrence\_rule, tags |
 | `pzk_get_tasks` | — | status, project\_id, due\_date, overdue\_only, priority, limit |
 | `pzk_get_todays_tasks` | — | include\_overdue |
 | `pzk_get_reminders` | — | limit |
@@ -870,7 +868,7 @@ Change in note count: 0
 | `pzk_delete_note` | note\_id | — |
 | `pzk_create_link` | source\_id, target\_id | link\_type, description, bidirectional |
 | `pzk_remove_link` | source\_id, target\_id | bidirectional |
-| `pzk_search_notes` | — | query, tags, note\_type, limit |
+| `pzk_search_notes` | — | query, tags, note\_type, status, project\_id, area\_id, limit |
 | `pzk_get_linked_notes` | note\_id | direction |
 | `pzk_get_all_tags` | — | — |
 | `pzk_find_similar_notes` | note\_id | threshold, limit |

@@ -4,7 +4,7 @@ import datetime
 
 import pytest
 
-from parazettle_mcp.models.schema import LinkType, Note, NoteType, Tag
+from parazettle_mcp.models.schema import LinkType, Note, NoteStatus, NoteType, Tag
 from parazettle_mcp.services.search_service import SearchResult, SearchService
 
 
@@ -212,28 +212,53 @@ class TestSearchService:
         assert {n.id for n in ai_notes} == {note1.id, note2.id}
 
     def test_search_combined(self, zettel_service):
-        """Test combined search with multiple criteria."""
-        # Create test notes
-        note1 = zettel_service.create_note(
-            title="Python Data Analysis",
-            content="Using Python for data analysis.",
-            note_type=NoteType.PERMANENT,
-            tags=["python", "data science", "analysis"],
+        """Test combined search with text plus task-routing filters."""
+        area = zettel_service.create_area_note(
+            title="Engineering",
+            content="Software delivery and maintenance.",
         )
-        note2 = zettel_service.create_note(
-            title="Python Web Development",
-            content="Using Python for web development.",
-            note_type=NoteType.PERMANENT,
-            tags=["python", "web", "development"],
+        project_a = zettel_service.create_project_note(
+            title="Project A",
+            content="Primary project.",
+            area_id=area.id,
+        )
+        project_b = zettel_service.create_project_note(
+            title="Project B",
+            content="Secondary project.",
+            area_id=area.id,
         )
 
-        # Test tag-based search
-        python_notes = zettel_service.get_notes_by_tag("python")
-        assert len(python_notes) == 2
-        assert {n.id for n in python_notes} == {note1.id, note2.id}
-
-        # Test tag and type filtering
-        permanent_notes = zettel_service.repository.search(
-            note_type=NoteType.PERMANENT, tags=["python"]
+        matching_task = zettel_service.create_task(
+            title="Python cleanup",
+            content="Use Python to clean up the deployment scripts.",
+            project_id=project_a.id,
+            status=NoteStatus.READY,
+            tags=["python", "maintenance"],
         )
-        assert len(permanent_notes) == 2
+        zettel_service.create_task(
+            title="JavaScript cleanup",
+            content="Use JavaScript to clean up the frontend bundle.",
+            project_id=project_a.id,
+            status=NoteStatus.ACTIVE,
+            tags=["javascript", "maintenance"],
+        )
+        zettel_service.create_task(
+            title="Python backlog",
+            content="Use Python to explore a future automation idea.",
+            project_id=project_b.id,
+            status=NoteStatus.READY,
+            tags=["python", "backlog"],
+        )
+
+        search_service = SearchService(zettel_service)
+        results = search_service.search_combined(
+            text="python",
+            tags=["python", "javascript"],
+            note_type=NoteType.TASK,
+            status=NoteStatus.READY,
+            project_id=project_a.id,
+            area_id=area.id,
+        )
+
+        assert len(results) == 1
+        assert results[0].note.id == matching_task.id

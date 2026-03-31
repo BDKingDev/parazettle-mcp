@@ -40,6 +40,7 @@ class ZettelService:
         note_type: NoteType = NoteType.PERMANENT,
         tags: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        source: NoteSource = NoteSource.MANUAL,
     ) -> Note:
         """Create a new note."""
         if not title:
@@ -54,6 +55,7 @@ class ZettelService:
             note_type=note_type,
             tags=[Tag(name=tag) for tag in (tags or [])],
             metadata=metadata or {},
+            source=source,
         )
 
         # Save to repository
@@ -376,7 +378,9 @@ class ZettelService:
             area_id=area_id,
         )
         task = self.repository.create(task)
-        self.create_link(task.id, project_id, LinkType.PART_OF, bidirectional=True)
+        task, _ = self.create_link(
+            task.id, project_id, LinkType.PART_OF, bidirectional=True
+        )
         return task
 
     def update_task_status(self, note_id: str, new_status: NoteStatus) -> Note:
@@ -409,19 +413,25 @@ class ZettelService:
         next_due = (
             (done_note.due_date + delta) if (done_note.due_date and delta) else None
         )
-        new_task = Note(
+        next_remind_at = (
+            (done_note.remind_at + delta) if (done_note.remind_at and delta) else None
+        )
+
+        new_task = self.create_task(
             title=done_note.title,
             content=done_note.content,
-            note_type=NoteType.TASK,
-            tags=list(done_note.tags),
             status=NoteStatus.READY,
-            source=NoteSource.RECURRING,
+            tags=[tag.name for tag in done_note.tags],
+            project_id=done_note.project_id,
+            area_id=done_note.area_id,
             due_date=next_due,
             priority=done_note.priority,
             recurrence_rule=done_note.recurrence_rule,
             estimated_minutes=done_note.estimated_minutes,
+            remind_at=next_remind_at,
+            source=NoteSource.RECURRING,
         )
-        new_task = self.repository.create(new_task)
+
         # Link back to completed instance for audit trail
         new_task.add_link(done_note.id, LinkType.REFERENCE, "recurring from")
         return self.repository.update(new_task)
@@ -487,6 +497,7 @@ class ZettelService:
         deadline: Optional[datetime.date] = None,
         area_id: Optional[str] = None,
         tags: Optional[List[str]] = None,
+        source: NoteSource = NoteSource.MANUAL,
     ) -> Note:
         """Create a PROJECT-type note, optionally linked to an area."""
         metadata: Dict[str, Any] = {}
@@ -500,6 +511,7 @@ class ZettelService:
             metadata=metadata,
             due_date=deadline,
             area_id=area_id,
+            source=source,
         )
         project = self.repository.create(project)
         if area_id:
