@@ -1,6 +1,6 @@
 # PARA/GTD Guide
 
-Parazettle extends Zettelkasten with a GTD-inspired action layer using the PARA organisational structure. This guide explains the concepts, the hierarchy, and how to work with tasks, projects, and areas day-to-day.
+Parazettel extends Zettelkasten with a GTD-inspired action layer using the PARA organisational structure. This guide explains the concepts, the hierarchy, and how to work with tasks, projects, and areas day-to-day.
 
 ---
 
@@ -12,7 +12,7 @@ PARA is an organisational system built on four categories:
 
 - **Projects** — active outcomes with a specific end state and deadline
 - **Areas** — ongoing responsibilities with no end date (health, finances, a team you manage)
-- **Resources** — reference material you may want later (handled as knowledge notes in Parazettle)
+- **Resources** — reference material you may want later (handled as knowledge notes in Parazettel)
 - **Archive** — inactive items, marked with `status=archived`
 
 ### GTD (Getting Things Done)
@@ -25,7 +25,7 @@ GTD is a workflow for capturing, clarifying, and acting on commitments:
 - **Reflect** weekly: review open loops, update statuses
 - **Engage** using the today view and context filters
 
-### How they fit together in Parazettle
+### How they fit together in Parazettel
 
 Tasks, projects, and areas are note types in the same graph as your knowledge notes. They share IDs, tags, and semantic links. A project note can link to the research notes that inform it; a task can reference the book note that prompted it.
 

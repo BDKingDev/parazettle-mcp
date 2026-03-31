@@ -2,7 +2,7 @@
 
 import pytest
 
-from parazettle_mcp.models.schema import LinkType, NoteType
+from parazettel_mcp.models.schema import LinkType, NoteType
 
 
 def test_create_note(zettel_service):

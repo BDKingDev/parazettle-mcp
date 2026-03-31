@@ -5,8 +5,8 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
-from parazettle_mcp.config import config
-from parazettle_mcp.models.schema import (
+from parazettel_mcp.config import config
+from parazettel_mcp.models.schema import (
     Link,
     LinkType,
     Note,
@@ -15,7 +15,7 @@ from parazettle_mcp.models.schema import (
     NoteType,
     Tag,
 )
-from parazettle_mcp.storage.note_repository import NoteRepository
+from parazettel_mcp.storage.note_repository import NoteRepository
 
 logger = logging.getLogger(__name__)
 

@@ -16,21 +16,21 @@ class ZettelkastenConfig(BaseModel):
 
     # Base directory for the project
     base_dir: Path = Field(
-        default_factory=lambda: Path(os.getenv("ZETTELKASTEN_BASE_DIR", "."))
+        default_factory=lambda: Path(os.getenv("PARAZETTEL_BASE_DIR", "."))
     )
     # Storage configuration
     notes_dir: Path = Field(
-        default_factory=lambda: Path(os.getenv("ZETTELKASTEN_NOTES_DIR", "data/notes"))
+        default_factory=lambda: Path(os.getenv("PARAZETTEL_NOTES_DIR", "data/notes"))
     )
     # Database configuration
     database_path: Path = Field(
         default_factory=lambda: Path(
-            os.getenv("ZETTELKASTEN_DATABASE_PATH", "data/db/zettelkasten.db")
+            os.getenv("PARAZETTEL_DATABASE_PATH", "data/db/parazettel.db")
         )
     )
     # Server configuration
     server_name: str = Field(
-        default=os.getenv("ZETTELKASTEN_SERVER_NAME", "parazettle")
+        default=os.getenv("PARAZETTEL_SERVER_NAME", "parazettel")
     )
     server_version: str = Field(default="0.4.0")
     # Date format for ID generation (using ISO format for timestamps)

@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 setup(
-    name="parazettle-mcp",
+    name="parazettel-mcp",
     version="0.4.0",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
@@ -25,7 +25,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "parazettle-mcp=parazettle_mcp.main:main",
+            "parazettel-mcp=parazettel_mcp.main:main",
         ],
     },
 )

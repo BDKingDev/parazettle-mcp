@@ -2,7 +2,7 @@
 
 import pytest
 
-from parazettle_mcp.models.schema import LinkType, Note, NoteType, Tag
+from parazettel_mcp.models.schema import LinkType, Note, NoteType, Tag
 
 
 def test_create_note(note_repository):

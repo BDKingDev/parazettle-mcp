@@ -94,8 +94,8 @@ Creates a project linked to an area.
 
 ```json
 {
-  "title": "Parazettle MCP",
-  "content": "Build and ship the parazettle fork with PARA/GTD support.",
+  "title": "Parazettel MCP",
+  "content": "Build and ship the parazettel fork with PARA/GTD support.",
   "area_id": "{AREA_ID}",
   "outcome": "Working MCP server with full GTD workflow support",
   "deadline": "2026-04-30"
@@ -128,7 +128,7 @@ Lists active projects sorted by deadline.
 ```
 Projects (1):
 
-1. Parazettle MCP (ID: {PROJECT_ID})
+1. Parazettel MCP (ID: {PROJECT_ID})
    Deadline: 2026-04-30
    Outcome: Working MCP server with full GTD workflow support
 
@@ -151,14 +151,14 @@ Returns a project with task status summary.
 **Expected output:**
 
 ```
-# Parazettle MCP
+# Parazettel MCP
 ID: {PROJECT_ID}
 Outcome: Working MCP server with full GTD workflow support
 Tasks: 0 total
 
-# Parazettle MCP
+# Parazettel MCP
 
-Build and ship the parazettle fork with PARA/GTD support.
+Build and ship the parazettel fork with PARA/GTD support.
 ```
 
 ---
@@ -665,7 +665,7 @@ Invalid status: flying. Valid values are: active, archived, cancelled, done, dra
 ```
 Found N both linked notes for {NOTE_ID}:
 
-1. Parazettle MCP (ID: {PROJECT_ID})
+1. Parazettel MCP (ID: {PROJECT_ID})
    Link type: supports
    Description: Atomic design principle applies to task decomposition
 
@@ -738,10 +738,10 @@ Returns empty if no other notes share tags or links.
 ```
 Central notes in the Zettelkasten (most connected):
 
-1. Parazettle MCP (ID: {PROJECT_ID})
+1. Parazettel MCP (ID: {PROJECT_ID})
    Connections: 3
    Tags: ...
-   Preview: Build and ship the parazettle fork...
+   Preview: Build and ship the parazettel fork...
 
 ```
 

@@ -6,10 +6,10 @@ import os
 import sys
 from pathlib import Path
 
-from parazettle_mcp.config import config
-from parazettle_mcp.models.db_models import init_db
-from parazettle_mcp.server.mcp_server import ZettelkastenMcpServer
-from parazettle_mcp.utils import setup_logging
+from parazettel_mcp.config import config
+from parazettel_mcp.models.db_models import init_db
+from parazettel_mcp.server.mcp_server import ZettelkastenMcpServer
+from parazettel_mcp.utils import setup_logging
 
 
 def parse_args():
@@ -19,19 +19,19 @@ def parse_args():
         "--notes-dir",
         help="Directory for storing note files",
         type=str,
-        default=os.environ.get("ZETTELKASTEN_NOTES_DIR"),
+        default=os.environ.get("PARAZETTEL_NOTES_DIR"),
     )
     parser.add_argument(
         "--database-path",
         help="SQLite database file path",
         type=str,
-        default=os.environ.get("ZETTELKASTEN_DATABASE_PATH"),
+        default=os.environ.get("PARAZETTEL_DATABASE_PATH"),
     )
     parser.add_argument(
         "--log-level",
         help="Logging level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default=os.environ.get("ZETTELKASTEN_LOG_LEVEL", "INFO"),
+        default=os.environ.get("PARAZETTEL_LOG_LEVEL", "INFO"),
     )
     return parser.parse_args()
 

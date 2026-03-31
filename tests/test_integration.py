@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from parazettle_mcp.config import config
-from parazettle_mcp.models.schema import LinkType, NoteType
-from parazettle_mcp.server.mcp_server import ZettelkastenMcpServer
-from parazettle_mcp.services.search_service import SearchService
-from parazettle_mcp.services.zettel_service import ZettelService
+from parazettel_mcp.config import config
+from parazettel_mcp.models.schema import LinkType, NoteType
+from parazettel_mcp.server.mcp_server import ZettelkastenMcpServer
+from parazettel_mcp.services.search_service import SearchService
+from parazettel_mcp.services.zettel_service import ZettelService
 
 
 class TestIntegration:
@@ -48,6 +48,17 @@ class TestIntegration:
         # Restore original config
         config.notes_dir = self.original_notes_dir
         config.database_path = self.original_database_path
+
+        # Dispose repository engines so Windows can release the SQLite files.
+        disposed = set()
+        for repo in (
+            getattr(self.zettel_service, "repository", None),
+            getattr(getattr(self.server, "zettel_service", None), "repository", None),
+        ):
+            engine = getattr(repo, "engine", None)
+            if engine is not None and id(engine) not in disposed:
+                engine.dispose()
+                disposed.add(id(engine))
 
         # Clean up temp directories
         self.temp_notes_dir.cleanup()

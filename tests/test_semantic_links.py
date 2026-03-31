@@ -5,9 +5,9 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
-from parazettle_mcp.models.schema import Link, LinkType, Note, NoteType, Tag
-from parazettle_mcp.server.mcp_server import ZettelkastenMcpServer
-from parazettle_mcp.services.zettel_service import ZettelService
+from parazettel_mcp.models.schema import Link, LinkType, Note, NoteType, Tag
+from parazettel_mcp.server.mcp_server import ZettelkastenMcpServer
+from parazettel_mcp.services.zettel_service import ZettelService
 
 
 class TestSemanticLinks:
@@ -654,6 +654,7 @@ Test content for parsing links from markdown.
 
         # Create MCP server
         server = ZettelkastenMcpServer()
+        server.zettel_service.repository.engine.dispose()
         server.zettel_service = zettel_service
 
         # Access the tool function directly as a method of the server
@@ -686,6 +687,7 @@ Test content for parsing links from markdown.
 
         # Create MCP server with mocked functions
         server = ZettelkastenMcpServer()
+        server.zettel_service.repository.engine.dispose()
         server.zettel_service = zettel_service  # Use our test zettel_service
 
         # Call the tool function directly as a method of the server
@@ -823,7 +825,7 @@ Test content for parsing links from markdown.
         )
 
         # Create search service
-        from parazettle_mcp.services.search_service import SearchService
+        from parazettel_mcp.services.search_service import SearchService
 
         search_service = SearchService(zettel_service)
 
@@ -901,7 +903,7 @@ Test content for parsing links from markdown.
 
     def test_central_notes_with_semantic_links(self, zettel_service):
         """Test the find_central_notes function with semantic links."""
-        from parazettle_mcp.services.search_service import SearchService
+        from parazettel_mcp.services.search_service import SearchService
 
         search_service = SearchService(zettel_service)
 

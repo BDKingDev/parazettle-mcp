@@ -8,8 +8,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from mcp.server.fastmcp import Context, FastMCP
 from sqlalchemy import exc as sqlalchemy_exc
 
-from parazettle_mcp.config import config
-from parazettle_mcp.models.schema import (
+from parazettel_mcp.config import config
+from parazettel_mcp.models.schema import (
     LinkType,
     Note,
     NoteSource,
@@ -17,8 +17,8 @@ from parazettle_mcp.models.schema import (
     NoteType,
     Tag,
 )
-from parazettle_mcp.services.search_service import SearchService
-from parazettle_mcp.services.zettel_service import ZettelService
+from parazettel_mcp.services.search_service import SearchService
+from parazettel_mcp.services.zettel_service import ZettelService
 
 logger = logging.getLogger(__name__)
 
@@ -825,7 +825,7 @@ class ZettelkastenMcpServer:
                 if recurrence_rule is not None:
                     task.recurrence_rule = recurrence_rule
                 if tags is not None:
-                    from parazettle_mcp.models.schema import Tag
+                    from parazettel_mcp.models.schema import Tag
                     task.tags = [Tag(name=t.strip()) for t in tags.split(",") if t.strip()]
 
                 # Persist non-status changes first so they are included in any

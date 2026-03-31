@@ -4,8 +4,8 @@ import datetime
 
 import pytest
 
-from parazettle_mcp.models.schema import LinkType, Note, NoteStatus, NoteType, Tag
-from parazettle_mcp.services.search_service import SearchResult, SearchService
+from parazettel_mcp.models.schema import LinkType, Note, NoteStatus, NoteType, Tag
+from parazettel_mcp.services.search_service import SearchResult, SearchService
 
 
 class TestSearchService:

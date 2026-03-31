@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from parazettle_mcp.models.schema import LinkType, NoteSource, NoteStatus, NoteType
-from parazettle_mcp.server.mcp_server import ZettelkastenMcpServer
+from parazettel_mcp.models.schema import LinkType, NoteSource, NoteStatus, NoteType
+from parazettel_mcp.server.mcp_server import ZettelkastenMcpServer
 
 
 class TestMcpServer:
@@ -37,14 +37,14 @@ class TestMcpServer:
 
         # Create patchers for FastMCP, ZettelService, and SearchService
         self.mcp_patcher = patch(
-            "parazettle_mcp.server.mcp_server.FastMCP", return_value=self.mock_mcp
+            "parazettel_mcp.server.mcp_server.FastMCP", return_value=self.mock_mcp
         )
         self.zettel_patcher = patch(
-            "parazettle_mcp.server.mcp_server.ZettelService",
+            "parazettel_mcp.server.mcp_server.ZettelService",
             return_value=self.mock_zettel_service,
         )
         self.search_patcher = patch(
-            "parazettle_mcp.server.mcp_server.SearchService",
+            "parazettel_mcp.server.mcp_server.SearchService",
             return_value=self.mock_search_service,
         )
 

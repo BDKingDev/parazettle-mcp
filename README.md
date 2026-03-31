@@ -1,10 +1,10 @@
-# Parazettle MCP
+# Parazettel MCP
 
 A Zettelkasten knowledge management system extended with GTD and PARA workflow support, running as a Model Context Protocol (MCP) server. Fork of [zettelkasten-mcp](https://github.com/entanglr/zettelkasten-mcp).
 
-## What is Parazettle?
+## What is Parazettel?
 
-Parazettle combines two complementary systems:
+Parazettel combines two complementary systems:
 
 **Zettelkasten** — a graph-first knowledge method built on atomic notes, semantic links, and emergent insight. Each note is a discrete idea; meaning grows from the connections between notes.
 
@@ -141,8 +141,8 @@ All tools are prefixed `pzk_`.
 ## Installation
 
 ```bash
-git clone https://github.com/BDKingDev/parazettle-mcp.git
-cd parazettle-mcp
+git clone https://github.com/BDKingDev/parazettel-mcp.git
+cd parazettel-mcp
 
 # Install dependencies (creates .venv with Python 3.13)
 uv venv --python 3.13
@@ -156,13 +156,13 @@ Add to your Claude Desktop MCP configuration:
 ```json
 {
   "mcpServers": {
-    "parazettle": {
-      "command": "/absolute/path/to/parazettle-mcp/.venv/bin/python",
-      "args": ["-m", "parazettle_mcp.main"],
+    "parazettel": {
+      "command": "/absolute/path/to/parazettel-mcp/.venv/bin/python",
+      "args": ["-m", "parazettel_mcp.main"],
       "env": {
-        "ZETTELKASTEN_NOTES_DIR": "/absolute/path/to/parazettle-mcp/data/notes",
-        "ZETTELKASTEN_DATABASE_PATH": "/absolute/path/to/parazettle-mcp/data/db/parazettle.db",
-        "ZETTELKASTEN_LOG_LEVEL": "INFO"
+        "PARAZETTEL_NOTES_DIR": "/absolute/path/to/parazettel-mcp/data/notes",
+        "PARAZETTEL_DATABASE_PATH": "/absolute/path/to/parazettel-mcp/data/db/parazettel.db",
+        "PARAZETTEL_LOG_LEVEL": "INFO"
       }
     }
   }
@@ -180,9 +180,9 @@ Add the same entry to `~/.claude.json` under `mcpServers`.
 Copy `.env.example` to `.env` and set paths as needed. All paths can also be passed as environment variables or CLI flags:
 
 ```bash
-python -m parazettle_mcp.main \
+python -m parazettel_mcp.main \
   --notes-dir ./data/notes \
-  --database-path ./data/db/parazettle.db
+  --database-path ./data/db/parazettel.db
 ```
 
 ---

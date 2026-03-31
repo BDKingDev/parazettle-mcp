@@ -19,8 +19,8 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, Session, declarative_base, relationship, sessionmaker
 
-from parazettle_mcp.config import config
-from parazettle_mcp.models.schema import LinkType, NoteType
+from parazettel_mcp.config import config
+from parazettel_mcp.models.schema import LinkType, NoteType
 
 # Create base class for SQLAlchemy models
 Base = declarative_base()

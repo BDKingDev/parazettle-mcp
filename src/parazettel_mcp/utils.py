@@ -35,6 +35,7 @@ def setup_logging(level: str = "INFO", log_file: Optional[str] = None):
     # Apply configuration
     logging.basicConfig(**log_config)
 
+
 def parse_tags(tags_str: str) -> list[str]:
     """Parse a comma-separated list of tags into a list of tag strings.
     Args:
