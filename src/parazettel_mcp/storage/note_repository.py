@@ -4,6 +4,7 @@ import datetime
 import json
 import logging
 import os
+import sqlite3
 import threading
 from collections import OrderedDict
 from pathlib import Path
@@ -77,6 +78,27 @@ def _json_default(obj: Any) -> Any:
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
+def _normalize_wiki_target(target: str) -> str:
+    """Return the note id portion of an Obsidian wiki-link target."""
+    target = target.strip()
+    target = target.split("|", 1)[0].strip()
+    target = target.split("#", 1)[0].strip()
+    if target.endswith(".md"):
+        target = target[: -len(".md")]
+    return target
+
+
+def _coerce_datetime(value: Any, fallback: datetime.datetime) -> datetime.datetime:
+    """Accept YAML-parsed datetimes/dates as well as ISO timestamp strings."""
+    if value is None or value == "":
+        return fallback
+    if isinstance(value, datetime.datetime):
+        return value
+    if isinstance(value, datetime.date):
+        return datetime.datetime.combine(value, datetime.time.min)
+    return datetime.datetime.fromisoformat(str(value))
+
+
 class NoteRepository(Repository[Note]):
     """Repository for note storage and retrieval.
     This implements a dual storage approach:
@@ -102,9 +124,14 @@ class NoteRepository(Repository[Note]):
 
         # File access lock
         self.file_lock = threading.RLock()
+        self.last_rebuild_backup_path: Optional[Path] = None
 
         # Initialize by rebuilding index if needed
         self.rebuild_index_if_needed()
+
+    def close(self) -> None:
+        """Release database resources held by this repository."""
+        self.engine.dispose()
 
     def rebuild_index_if_needed(self) -> None:
         """Rebuild the database index from files if needed."""
@@ -118,8 +145,34 @@ class NoteRepository(Repository[Note]):
         if db_ids != file_stems:
             self.rebuild_index()
 
+    def _create_database_backup(self) -> Optional[Path]:
+        """Create a SQLite database backup before destructive reindexing."""
+        db_path = config.get_absolute_path(config.database_path)
+        if not db_path.exists():
+            return None
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+        backup_path = db_path.with_name(f"{db_path.name}.{timestamp}.bak")
+        counter = 1
+        while backup_path.exists():
+            backup_path = db_path.with_name(f"{db_path.name}.{timestamp}.{counter}.bak")
+            counter += 1
+
+        source = sqlite3.connect(str(db_path))
+        backup = sqlite3.connect(str(backup_path))
+        try:
+            source.backup(backup)
+        finally:
+            backup.close()
+            source.close()
+
+        logger.info("Created database backup before reindex: %s", backup_path)
+        return backup_path
+
     def rebuild_index(self) -> None:
         """Rebuild the database index from all markdown files."""
+        self.last_rebuild_backup_path = self._create_database_backup()
+
         # Clear the database first
         with self.session_factory() as session:
             # Delete all records from link table
@@ -222,7 +275,7 @@ class NoteRepository(Repository[Note]):
                             link_type_str = link_type_str[2:].strip()
                         # Extract target ID and description
                         id_and_description = parts[1].split("]]", 1)
-                        target_id = id_and_description[0].strip()
+                        target_id = _normalize_wiki_target(id_and_description[0])
                         description = None
                         if len(id_and_description) > 1:
                             description = id_and_description[1].strip()
@@ -245,16 +298,8 @@ class NoteRepository(Repository[Note]):
                     logger.error(f"Error parsing link: {line} - {e}")
 
         # Extract timestamps
-        created_str = metadata.get("created")
-        created_at = (
-            datetime.datetime.fromisoformat(created_str)
-            if created_str
-            else datetime.datetime.now()
-        )
-        updated_str = metadata.get("updated")
-        updated_at = (
-            datetime.datetime.fromisoformat(updated_str) if updated_str else created_at
-        )
+        created_at = _coerce_datetime(metadata.get("created"), datetime.datetime.now())
+        updated_at = _coerce_datetime(metadata.get("updated"), created_at)
 
         # Extract action-item fields (strip from metadata so they don't double-store)
         _action_keys = {

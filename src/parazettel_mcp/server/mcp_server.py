@@ -45,6 +45,10 @@ class ZettelkastenMcpServer:
         self.search_service.initialize()
         logger.info("Zettelkasten MCP server initialized")
 
+    def close(self) -> None:
+        """Release resources held by the MCP server."""
+        self.zettel_service.close()
+
     def format_error_response(self, error: Exception) -> str:
         """Format an error response in a consistent way.
 
@@ -671,14 +675,20 @@ class ZettelkastenMcpServer:
                 note_count_before = len(self.zettel_service.get_all_notes())
 
                 # Perform the rebuild
-                self.zettel_service.rebuild_index()
+                backup_path = self.zettel_service.rebuild_index()
 
                 # Get count after rebuild
                 note_count_after = len(self.zettel_service.get_all_notes())
+                backup_message = (
+                    f"Backup created: {backup_path}\n"
+                    if backup_path
+                    else "Backup created: none (database file did not exist)\n"
+                )
 
                 # Return a detailed success message
                 return (
                     f"Database index rebuilt successfully.\n"
+                    f"{backup_message}"
                     f"Notes processed: {note_count_after}\n"
                     f"Change in note count: {note_count_after - note_count_before}"
                 )

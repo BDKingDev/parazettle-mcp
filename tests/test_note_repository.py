@@ -2,7 +2,9 @@
 
 import pytest
 
+from parazettel_mcp.config import config
 from parazettel_mcp.models.schema import LinkType, Note, NoteStatus, NoteType, Tag
+from parazettel_mcp.storage.note_repository import _coerce_datetime, _normalize_wiki_target
 
 
 def test_create_note(note_repository):
@@ -248,6 +250,105 @@ def test_invalid_frontmatter_status_is_ignored_on_read_and_rebuild(note_reposito
     assert note.title == "Bad Status"
     assert note.note_type == NoteType.TASK
     assert note.status is None
+
+
+def test_normalize_wiki_target_handles_aliases_and_fragments():
+    """Wiki-link target parsing should keep only the note id."""
+    assert _normalize_wiki_target("target-note|Target Note") == "target-note"
+    assert _normalize_wiki_target("target-note#Section|Target Note") == "target-note"
+    assert _normalize_wiki_target("target-note.md|Target Note") == "target-note"
+    assert _normalize_wiki_target("target-note") == "target-note"
+
+
+def test_coerce_datetime_handles_yaml_parsed_dates():
+    """YAML may parse unquoted timestamp frontmatter before repository parsing."""
+    import datetime
+
+    fallback = datetime.datetime(2026, 1, 1, 0, 0, 0)
+    parsed = datetime.datetime(2026, 4, 3, 14, 47, 1, 126472)
+    parsed_date = datetime.date(2026, 4, 3)
+
+    assert _coerce_datetime(parsed, fallback) == parsed
+    assert _coerce_datetime(parsed_date, fallback) == datetime.datetime(2026, 4, 3)
+    assert _coerce_datetime("2026-04-03T14:47:01.126472", fallback) == parsed
+    assert _coerce_datetime(None, fallback) == fallback
+
+
+def test_rebuild_index_accepts_yaml_parsed_timestamp_frontmatter(note_repository):
+    """Unquoted YAML timestamps should not cause rebuild to skip the note."""
+    note_path = note_repository.notes_dir / "timestamp-note.md"
+    note_path.write_text(
+        "---\n"
+        "id: timestamp-note\n"
+        "title: Timestamp Note\n"
+        "type: permanent\n"
+        "created: 2026-04-03T14:47:01.126472\n"
+        "updated: 2026-04-03T14:48:49.332913\n"
+        "---\n"
+        "# Timestamp Note\n\n"
+        "Timestamp content.\n",
+        encoding="utf-8",
+    )
+
+    note_repository.rebuild_index()
+    note = note_repository.get("timestamp-note")
+
+    assert note is not None
+    assert note.created_at.year == 2026
+    assert note.updated_at.minute == 48
+
+
+def test_rebuild_index_normalizes_piped_wiki_link_targets(note_repository):
+    """Rebuild should index the note id, not the display alias, for piped links."""
+    source_path = note_repository.notes_dir / "source-note.md"
+    target_path = note_repository.notes_dir / "target-note.md"
+    target_path.write_text(
+        "---\n"
+        "id: target-note\n"
+        "title: Target Note\n"
+        "type: permanent\n"
+        "---\n"
+        "# Target Note\n\n"
+        "Target content.\n",
+        encoding="utf-8",
+    )
+    source_path.write_text(
+        "---\n"
+        "id: source-note\n"
+        "title: Source Note\n"
+        "type: permanent\n"
+        "---\n"
+        "# Source Note\n\n"
+        "Source content.\n\n"
+        "## Links\n"
+        "- reference [[target-note|Target Note]] Alias should not become target_id.\n",
+        encoding="utf-8",
+    )
+
+    note_repository.rebuild_index()
+
+    source = note_repository.get("source-note")
+    linked = note_repository.find_linked_notes("source-note", "outgoing")
+
+    assert source is not None
+    assert [link.target_id for link in source.links] == ["target-note"]
+    assert [note.id for note in linked] == ["target-note"]
+
+
+def test_rebuild_index_creates_database_backup(note_repository):
+    """Rebuild should back up the SQLite database before clearing tables."""
+    saved = note_repository.create(Note(title="Backup Test", content="Backup content."))
+    db_path = config.get_absolute_path(config.database_path)
+    for backup_path in db_path.parent.glob(f"{db_path.name}.*.bak"):
+        backup_path.unlink()
+
+    note_repository.rebuild_index()
+    backup_paths = list(db_path.parent.glob(f"{db_path.name}.*.bak"))
+
+    assert len(backup_paths) == 1
+    assert backup_paths[0] == note_repository.last_rebuild_backup_path
+    assert backup_paths[0].stat().st_size > 0
+    assert note_repository.get(saved.id) is not None
 
 
 # ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, Session, declarative_base, relationship, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from parazettel_mcp.config import config
 from parazettel_mcp.models.schema import LinkType, NoteType
@@ -132,7 +133,7 @@ def init_db() -> Engine:
     from sqlalchemy import event, text
 
     # Create engine based on configuration
-    engine = create_engine(config.get_db_url())
+    engine = create_engine(config.get_db_url(), poolclass=NullPool)
     Base.metadata.create_all(engine)
 
     # Connection-scoped pragmas — applied on every new connection
@@ -175,5 +176,5 @@ def init_db() -> Engine:
 def get_session_factory(engine=None):
     """Get a session factory for the database."""
     if engine is None:
-        engine = create_engine(config.get_db_url())
+        engine = create_engine(config.get_db_url(), poolclass=NullPool)
     return sessionmaker(bind=engine)

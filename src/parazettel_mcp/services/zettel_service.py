@@ -34,6 +34,10 @@ class ZettelService:
         # The repository is initialized in its constructor
         pass
 
+    def close(self) -> None:
+        """Release resources held by the service."""
+        self.repository.close()
+
     def create_note(
         self,
         title: str,
@@ -255,9 +259,10 @@ class ZettelService:
             raise ValueError(f"Note with ID {note_id} not found")
         return self.repository.find_linked_notes(note_id, direction)
 
-    def rebuild_index(self) -> None:
+    def rebuild_index(self) -> Optional[Path]:
         """Rebuild the database index from files."""
         self.repository.rebuild_index()
+        return self.repository.last_rebuild_backup_path
 
     def export_note(self, note_id: str, format: str = "markdown") -> str:
         """Export a note in the specified format."""

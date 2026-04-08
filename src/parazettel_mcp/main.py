@@ -61,14 +61,19 @@ def main():
     db_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize database schema
+    engine = None
     try:
         logger.info(f"Using SQLite database: {config.get_db_url()}")
-        init_db()
+        engine = init_db()
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         sys.exit(1)
+    finally:
+        if engine is not None:
+            engine.dispose()
 
     # Create and run the MCP server
+    server = None
     try:
         logger.info("Starting Zettelkasten MCP server")
         server = ZettelkastenMcpServer()
@@ -76,6 +81,9 @@ def main():
     except Exception as e:
         logger.error(f"Error running server: {e}")
         sys.exit(1)
+    finally:
+        if server is not None:
+            server.close()
 
 
 if __name__ == "__main__":
