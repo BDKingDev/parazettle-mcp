@@ -22,10 +22,13 @@ The result is one unified vault where knowledge notes and action items share the
 - Search notes by content, tags, type, status, project, area, and more
 - Dual storage: Markdown files (source of truth) + SQLite index (fast queries)
 - WAL-mode SQLite with in-memory LRU cache for performance
+- Knowledge notes must be routed to an `area_id` directly or inherit one from `project_id`
 - Tasks with status lifecycle, priorities, energy levels, GTD contexts, and due dates
 - Projects linked to areas via the PARA hierarchy
+- Project views include task summaries, routed notes, and linked projects
 - Today view and reminder surfacing
 - Recurring tasks that auto-spawn the next instance on completion
+- Obsidian-style wiki-link aliases like `[[id|Title]]` are normalized on read and rebuild
 
 ---
 
@@ -90,9 +93,9 @@ All tools are prefixed `pzk_`.
 
 | Tool | Description |
 | --- | --- |
-| `pzk_create_note` | Create a note with title, content, type, and tags |
+| `pzk_create_note` | Create a note with title, content, source, and required area/project routing for non-area notes |
 | `pzk_get_note` | Retrieve a note by ID or title |
-| `pzk_update_note` | Update content, type, or tags |
+| `pzk_update_note` | Update content, type, tags, and project/area routing |
 | `pzk_delete_note` | Delete a note |
 | `pzk_create_link` | Create a typed link between notes |
 | `pzk_remove_link` | Remove a link |
@@ -110,7 +113,7 @@ All tools are prefixed `pzk_`.
 | Tool | Description |
 | --- | --- |
 | `pzk_create_task` | Create a task with status, due date, priority, energy, context, reminders |
-| `pzk_update_task` | Update task fields or status; recurring completion spawns the next instance |
+| `pzk_update_task` | Update task fields, status, or project assignment; recurring completion spawns the next instance |
 | `pzk_get_tasks` | Query tasks by status, project, due date, priority |
 | `pzk_get_todays_tasks` | Tasks due today + overdue, sorted by priority |
 | `pzk_get_reminders` | Notes and tasks with `remind_at` ≤ today |
@@ -122,9 +125,9 @@ All tools are prefixed `pzk_`.
 | `pzk_create_area` | Create an area note with optional review cadence |
 | `pzk_get_area` | Get an area with linked projects and task counts |
 | `pzk_list_areas` | List all areas |
-| `pzk_create_project` | Create a project linked to an area |
+| `pzk_create_project` | Create a project linked to an area with an explicit source |
 | `pzk_list_projects` | List active projects sorted by deadline |
-| `pzk_get_project` | Get a project with task status summary |
+| `pzk_get_project` | Get a project with task summary, routed notes, and linked projects |
 | `pzk_get_project_tasks` | Get all tasks for a project |
 
 ---
@@ -133,6 +136,10 @@ All tools are prefixed `pzk_`.
 
 1. **Markdown files** — source of truth. Human-readable, version-controllable, directly editable. Each note is `{id}.md` with YAML frontmatter.
 2. **SQLite database** — indexing layer. WAL mode with in-memory LRU cache. Automatically rebuilt from files when needed via `pzk_rebuild_index`.
+
+> **Rebuild safety:** `pzk_rebuild_index` creates a timestamped `.bak` of the SQLite database before clearing and rebuilding tables.
+>
+> **Obsidian aliases:** piped wiki links like `[[20260322T181907454570000|Habits and Habit Creation]]` are normalized to the underlying note ID during reads and index rebuilds.
 
 > **WAL sidecars:** Two small files (`.db-wal`, `.db-shm`) appear alongside the database while it is open. They are cleaned up automatically on shutdown and can be ignored.
 

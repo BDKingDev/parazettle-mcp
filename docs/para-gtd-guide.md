@@ -42,6 +42,7 @@ Area  (ongoing responsibility — no end date)
 - **Areas** are hub-like notes. They serve as entry points to a domain.
 - **Projects** are structure-like notes. They organise tasks and context around a single outcome.
 - **Tasks** must belong to a project. Their `area_id` is auto-filled from the project.
+- **Knowledge notes** should also be routed into the hierarchy. Non-area notes need either an explicit `area_id` or a `project_id`, and project-scoped notes inherit the project's `area_id`.
 
 ---
 
@@ -62,6 +63,7 @@ pzk_create_area
 pzk_create_project
   title: "Run a 5K"
   content: "Train for and complete a 5K race."
+  source: "transcript"
   area_id: <area_id>
   outcome: "Complete a 5K race in under 30 minutes"
   deadline: "2026-06-01"
@@ -81,6 +83,19 @@ pzk_create_task
 ```
 
 The task's `area_id` is automatically set from the project — you don't need to specify it.
+
+### 4. Create knowledge notes routed to the area or project
+
+```text
+pzk_create_note
+  title: "A 5K plan is easier to sustain when runs are pre-scheduled"
+  content: "Planning runs on the calendar reduces decision friction and improves follow-through."
+  note_type: "permanent"
+  source: "transcript"
+  project_id: <project_id>
+```
+
+Non-area notes must include either `area_id` or `project_id`. If you provide `project_id`, the note inherits the project's `area_id` automatically.
 
 ---
 
@@ -230,7 +245,7 @@ When you complete it:
 pzk_update_task task_id=<id> status="done"
 ```
 
-A new task is created with `due_date = 2026-04-04`, `status=ready`, and the same project linkage. The completed task is kept as a record.
+A new task is created with `due_date = 2026-04-04`, `status=ready`, and the same project linkage. If you reassign the task to a different project before marking it done, the spawned task keeps that new project and its inherited `area_id`. The completed task is kept as a record.
 
 ---
 
