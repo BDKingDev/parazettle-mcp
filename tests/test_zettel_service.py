@@ -42,6 +42,26 @@ def test_create_note_with_area_adds_reference_link(zettel_service):
     assert LinkType.REFERENCE in stored_links
 
 
+def test_create_area_note_self_assigns_area_without_rewrite(zettel_service, monkeypatch):
+    """Area creation should self-assign area_id before the first persisted write."""
+    updated_ids = []
+    original_update = zettel_service.repository.update
+
+    def tracking_update(note):
+        updated_ids.append(note.id)
+        return original_update(note)
+
+    monkeypatch.setattr(zettel_service.repository, "update", tracking_update)
+
+    area = zettel_service.create_area_note(
+        title="Operations",
+        content="Operational responsibilities.",
+    )
+
+    assert area.area_id == area.id
+    assert area.id not in updated_ids
+
+
 def test_get_note(zettel_service):
     """Test retrieving a note through the service."""
     # Create a test note

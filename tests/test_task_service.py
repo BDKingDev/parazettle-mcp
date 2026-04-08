@@ -109,6 +109,25 @@ def test_create_task_links_to_project(zettel_service, project):
     assert LinkType.HAS_PART in project_links
 
 
+def test_create_task_avoids_rewriting_child_note(zettel_service, project, monkeypatch):
+    """Task creation should only rewrite the parent note after the initial create."""
+    updated_ids = []
+    original_update = zettel_service.repository.update
+
+    def tracking_update(note):
+        updated_ids.append(note.id)
+        return original_update(note)
+
+    monkeypatch.setattr(zettel_service.repository, "update", tracking_update)
+
+    task = zettel_service.create_task(
+        title="Single-write task", content="Avoid rewriting the child note.", project_id=project.id
+    )
+
+    assert task.id not in updated_ids
+    assert project.id in updated_ids
+
+
 def test_update_task_reassigns_project_and_area(zettel_service, area, project):
     """update_task(project_id=...) should move the task and inherit the new area."""
     second_area = zettel_service.create_area_note(

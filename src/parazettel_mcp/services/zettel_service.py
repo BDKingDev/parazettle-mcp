@@ -78,6 +78,29 @@ class ZettelService:
             )
         return project
 
+    def _seed_routing_links(self, note: Note, parent_id: Optional[str] = None) -> Note:
+        """Attach stable routing links before the first file write."""
+        if note.area_id and note.note_type != NoteType.AREA and note.area_id != note.id:
+            note.add_link(note.area_id, LinkType.REFERENCE)
+        if parent_id:
+            note.add_link(parent_id, LinkType.PART_OF)
+        return note
+
+    def _ensure_parent_has_part_link(self, parent_id: Optional[str], child_id: str) -> None:
+        """Update the parent note once so it reflects the child relationship."""
+        if not parent_id:
+            return
+        parent = self.repository.get(parent_id)
+        if not parent:
+            raise ValueError(f"Parent note with ID {parent_id} not found")
+        if any(
+            link.target_id == child_id and link.link_type == LinkType.HAS_PART
+            for link in parent.links
+        ):
+            return
+        parent.add_link(child_id, LinkType.HAS_PART)
+        self.repository.update(parent)
+
     def _attach_area_reference_link(self, note_id: str, area_id: Optional[str]) -> Note:
         """Ensure a newly created note references its assigned area."""
         note = self.repository.get(note_id)
@@ -157,15 +180,13 @@ class ZettelService:
             area_id=resolved_area_id,
         )
 
-        # Save to repository
-        note = self.repository.create(note)
         if note_type == NoteType.AREA:
             note.area_id = note.id
-            return self.repository.update(note)
-        if note.area_id:
-            note = self._attach_area_reference_link(note.id, note.area_id)
-        if project_id:
-            note = self._sync_part_of_link(note.id, None, project_id)
+        else:
+            note = self._seed_routing_links(note, parent_id=project_id)
+
+        note = self.repository.create(note)
+        self._ensure_parent_has_part_link(project_id, note.id)
         return note
 
     def get_note(self, note_id: str) -> Optional[Note]:
@@ -516,9 +537,10 @@ class ZettelService:
             project_id=project_id,
             area_id=area_id,
         )
+        task = self._seed_routing_links(task, parent_id=project_id)
         task = self.repository.create(task)
-        task = self._attach_area_reference_link(task.id, task.area_id)
-        return self._sync_part_of_link(task.id, None, project_id)
+        self._ensure_parent_has_part_link(project_id, task.id)
+        return task
 
     def update_task(
         self,
@@ -724,9 +746,10 @@ class ZettelService:
             area_id=area_id,
             source=source,
         )
+        project = self._seed_routing_links(project, parent_id=area_id)
         project = self.repository.create(project)
-        project = self._attach_area_reference_link(project.id, project.area_id)
-        return self._sync_part_of_link(project.id, None, area_id)
+        self._ensure_parent_has_part_link(area_id, project.id)
+        return project
 
     def get_project_tasks(
         self, project_id: str, status: Optional[NoteStatus] = None

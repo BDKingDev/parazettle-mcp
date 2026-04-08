@@ -7,6 +7,8 @@ import os
 import re
 import sqlite3
 import threading
+import time
+import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
@@ -43,6 +45,9 @@ logger = logging.getLogger(__name__)
 _NOTE_CACHE: OrderedDict = OrderedDict()
 _NOTE_CACHE_LOCK = threading.Lock()
 _NOTE_CACHE_MAX = 256
+_ATOMIC_WRITE_ATTEMPTS = 5
+_ATOMIC_WRITE_BACKOFF_SECONDS = 0.05
+_RETRYABLE_ATOMIC_WRITE_WINERRORS = {5, 32}
 
 
 def _cache_get(path_str: str, mtime_ns: int) -> Optional[Note]:
@@ -103,6 +108,15 @@ def _coerce_datetime(value: Any, fallback: datetime.datetime) -> datetime.dateti
     return datetime.datetime.fromisoformat(str(value))
 
 
+def _is_retryable_atomic_write_error(exc: OSError) -> bool:
+    """Return True when a transient Windows file lock may clear on retry."""
+    if isinstance(exc, PermissionError):
+        return True
+    if exc.errno == 13:
+        return True
+    return getattr(exc, "winerror", None) in _RETRYABLE_ATOMIC_WRITE_WINERRORS
+
+
 class NoteRepository(Repository[Note]):
     """Repository for note storage and retrieval.
     This implements a dual storage approach:
@@ -136,6 +150,39 @@ class NoteRepository(Repository[Note]):
     def close(self) -> None:
         """Release database resources held by this repository."""
         self.engine.dispose()
+
+    def _build_tmp_path(self, file_path: Path) -> Path:
+        """Return a collision-resistant temp file path next to the target note."""
+        suffix = f".{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.tmp"
+        return file_path.with_name(f"{file_path.name}{suffix}")
+
+    def _write_markdown_atomically(self, file_path: Path, markdown: str) -> None:
+        """Write markdown via temp file + replace, retrying transient Windows locks."""
+        last_error: Optional[OSError] = None
+        for attempt in range(_ATOMIC_WRITE_ATTEMPTS):
+            tmp_path = self._build_tmp_path(file_path)
+            try:
+                with self.file_lock:
+                    with open(tmp_path, "w", encoding="utf-8") as f:
+                        f.write(markdown)
+                    tmp_path.replace(file_path)
+                return
+            except OSError as e:
+                last_error = e
+                try:
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+                except OSError:
+                    pass
+                if (
+                    attempt == _ATOMIC_WRITE_ATTEMPTS - 1
+                    or not _is_retryable_atomic_write_error(e)
+                ):
+                    break
+                time.sleep(_ATOMIC_WRITE_BACKOFF_SECONDS * (2**attempt))
+
+        assert last_error is not None
+        raise IOError(f"Failed to write note to {file_path}: {last_error}") from last_error
 
     def rebuild_index_if_needed(self) -> None:
         """Rebuild the database index from files if needed."""
@@ -612,22 +659,8 @@ class NoteRepository(Repository[Note]):
         # Convert note to markdown
         markdown = self._note_to_markdown(note)
 
-        # Write to file atomically (temp + rename prevents partial writes on crash)
         file_path = self.notes_dir / f"{note.id}.md"
-        tmp_path = file_path.with_suffix(".md.tmp")
-        try:
-            with self.file_lock:
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    f.write(markdown)
-                tmp_path.replace(file_path)
-        except IOError as e:
-            raise IOError(f"Failed to write note to {file_path}: {e}") from e
-        finally:
-            if tmp_path.exists():
-                try:
-                    tmp_path.unlink()
-                except OSError:
-                    pass
+        self._write_markdown_atomically(file_path, markdown)
 
         # Index in database — pass rendered body so DB content matches file
         rendered_body = frontmatter.loads(markdown).content
@@ -696,22 +729,8 @@ class NoteRepository(Repository[Note]):
         # Convert note to markdown
         markdown = self._note_to_markdown(note)
 
-        # Write to file atomically (temp + rename prevents partial writes on crash)
         file_path = self.notes_dir / f"{note.id}.md"
-        tmp_path = file_path.with_suffix(".md.tmp")
-        try:
-            with self.file_lock:
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    f.write(markdown)
-                tmp_path.replace(file_path)
-        except IOError as e:
-            raise IOError(f"Failed to write note to {file_path}: {e}") from e
-        finally:
-            if tmp_path.exists():
-                try:
-                    tmp_path.unlink()
-                except OSError:
-                    pass
+        self._write_markdown_atomically(file_path, markdown)
 
         _cache_evict(str(file_path))
         rendered_body = frontmatter.loads(markdown).content

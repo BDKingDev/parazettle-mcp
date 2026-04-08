@@ -1,5 +1,7 @@
 """Tests for the NoteRepository class."""
 
+from pathlib import Path
+
 import pytest
 
 from parazettel_mcp.config import config
@@ -464,8 +466,7 @@ def test_create_leaves_no_tmp_file(note_repository):
     """Atomic write: no .md.tmp file should remain after create()."""
     note = Note(title="Atomic Create", content="Test atomic write.")
     saved = note_repository.create(note)
-    tmp = note_repository.notes_dir / f"{saved.id}.md.tmp"
-    assert not tmp.exists()
+    assert not list(note_repository.notes_dir.glob(f"{saved.id}.md*.tmp"))
 
 
 def test_update_leaves_no_tmp_file(note_repository):
@@ -474,8 +475,28 @@ def test_update_leaves_no_tmp_file(note_repository):
     saved = note_repository.create(note)
     saved.content = "Updated content."
     note_repository.update(saved)
-    tmp = note_repository.notes_dir / f"{saved.id}.md.tmp"
-    assert not tmp.exists()
+    assert not list(note_repository.notes_dir.glob(f"{saved.id}.md*.tmp"))
+
+
+def test_create_retries_transient_replace_failure(note_repository, monkeypatch):
+    """Atomic create should retry once when Windows briefly locks the target file."""
+    note = Note(title="Retry Create", content="Retry around replace().")
+    original_replace = Path.replace
+    calls = {"count": 0}
+
+    def flaky_replace(self: Path, target: Path) -> Path:
+        if self.name.startswith(f"{note.id}.md") and calls["count"] == 0:
+            calls["count"] += 1
+            raise PermissionError(13, "Access is denied")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+
+    saved = note_repository.create(note)
+
+    assert calls["count"] == 1
+    assert note_repository.get(saved.id) is not None
+    assert not list(note_repository.notes_dir.glob(f"{saved.id}.md*.tmp"))
 
 
 def test_cache_hit_after_get(note_repository):
