@@ -88,6 +88,8 @@ class ZettelkastenMcpServer:
             tags: Optional[str] = None,
             source: Optional[str] = None,
             status: Optional[str] = None,
+            project_id: Optional[str] = None,
+            area_id: Optional[str] = None,
         ) -> str:
             """Create a new Zettelkasten note.
             Args:
@@ -99,6 +101,8 @@ class ZettelkastenMcpServer:
                 tags: Comma-separated list of tags (optional)
                 source: Origin of the note. Required for all note types except area.
                 status: Optional workflow status such as inbox, evergreen, or archived.
+                project_id: Optional project to route the note under; inherits the project's area.
+                area_id: ID of the area this note belongs to when project_id is not provided.
             """
             try:
                 # Convert note_type string to enum
@@ -139,6 +143,44 @@ class ZettelkastenMcpServer:
                                 f"Valid: {', '.join(s.value for s in NoteStatus)}"
                             )
 
+                resolved_area_id = area_id
+                if note_type_enum == NoteType.AREA:
+                    if project_id:
+                        return "Area notes cannot specify project_id."
+                    if area_id:
+                        return (
+                            "Area notes assign their own area_id automatically. "
+                            "Do not pass area_id."
+                        )
+                else:
+                    if not project_id and not area_id:
+                        return (
+                            "area_id or project_id is required for all note types "
+                            "except area."
+                        )
+                    if project_id:
+                        project = self.zettel_service.get_note(project_id)
+                        if not project or project.note_type != NoteType.PROJECT:
+                            return (
+                                f"project_id {project_id} is not a valid project note."
+                            )
+                        if not project.area_id:
+                            return (
+                                f"project_id {project_id} does not have an area_id."
+                            )
+                        if area_id and area_id != project.area_id:
+                            return (
+                                f"area_id {area_id} does not match project "
+                                f"{project_id} area_id {project.area_id}."
+                            )
+                        resolved_area_id = project.area_id
+                    if resolved_area_id:
+                        area = self.zettel_service.get_note(resolved_area_id)
+                        if not area or area.note_type != NoteType.AREA:
+                            return (
+                                f"area_id {resolved_area_id} is not a valid area note."
+                            )
+
                 # Create the note
                 note = self.zettel_service.create_note(
                     title=title,
@@ -147,6 +189,8 @@ class ZettelkastenMcpServer:
                     tags=tag_list,
                     source=note_source,
                     status=note_status,
+                    project_id=project_id,
+                    area_id=resolved_area_id,
                 )
                 return f"Note created successfully with ID: {note.id}"
             except Exception as e:
@@ -970,17 +1014,17 @@ class ZettelkastenMcpServer:
             title: str,
             content: str,
             source: str,
-            area_id: Optional[str] = None,
+            area_id: str,
             outcome: Optional[str] = None,
             deadline: Optional[str] = None,
             tags: Optional[str] = None,
         ) -> str:
-            """Create a project note, optionally linked to an area.
+            """Create a project note linked to an area.
             Args:
                 title: Project title
                 content: Project description
                 source: Origin of the project note
-                area_id: ID of the area this project belongs to
+                area_id: ID of the area this project belongs to (required)
                 outcome: The desired outcome/goal
                 deadline: Target completion date (YYYY-MM-DD)
                 tags: Comma-separated tags
@@ -995,10 +1039,9 @@ class ZettelkastenMcpServer:
                         f"Invalid source: {source}. "
                         f"Valid: {', '.join(s.value for s in NoteSource)}"
                     )
-                if area_id:
-                    area = self.zettel_service.get_note(area_id)
-                    if not area or area.note_type != NoteType.AREA:
-                        return f"area_id {area_id} is not a valid area note."
+                area = self.zettel_service.get_note(area_id)
+                if not area or area.note_type != NoteType.AREA:
+                    return f"area_id {area_id} is not a valid area note."
                 parsed_deadline = None
                 if deadline:
                     try:

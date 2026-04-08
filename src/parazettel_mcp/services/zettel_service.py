@@ -38,6 +38,28 @@ class ZettelService:
         """Release resources held by the service."""
         self.repository.close()
 
+    def _get_area_for_routing(self, area_id: str) -> Note:
+        """Return a validated area note for PARA routing."""
+        area = self.repository.get(area_id)
+        if not area:
+            raise ValueError(f"Area note with ID {area_id} not found")
+        if area.note_type != NoteType.AREA:
+            raise ValueError(
+                f"Note {area_id} is not an area (type: {area.note_type.value})"
+            )
+        return area
+
+    def _get_project_for_routing(self, project_id: str) -> Note:
+        """Return a validated project note for PARA routing."""
+        project = self.repository.get(project_id)
+        if not project:
+            raise ValueError(f"Project note with ID {project_id} not found")
+        if project.note_type != NoteType.PROJECT:
+            raise ValueError(
+                f"Note {project_id} is not a project (type: {project.note_type.value})"
+            )
+        return project
+
     def create_note(
         self,
         title: str,
@@ -47,12 +69,32 @@ class ZettelService:
         metadata: Optional[Dict[str, Any]] = None,
         source: NoteSource = NoteSource.MANUAL,
         status: Optional[NoteStatus] = None,
+        project_id: Optional[str] = None,
+        area_id: Optional[str] = None,
     ) -> Note:
         """Create a new note."""
         if not title:
             raise ValueError("Title is required")
         if not content:
             raise ValueError("Content is required")
+        if area_id and note_type != NoteType.AREA:
+            self._get_area_for_routing(area_id)
+
+        resolved_area_id = area_id
+        if project_id:
+            project = self._get_project_for_routing(project_id)
+            project_area_id = project.area_id
+            if project_area_id:
+                if resolved_area_id and resolved_area_id != project_area_id:
+                    raise ValueError(
+                        f"area_id {resolved_area_id} does not match project "
+                        f"{project_id} area_id {project_area_id}"
+                    )
+                resolved_area_id = project_area_id
+            elif not resolved_area_id:
+                raise ValueError(
+                    f"Project {project_id} does not have an area_id to inherit"
+                )
 
         # Create note object
         note = Note(
@@ -63,10 +105,20 @@ class ZettelService:
             metadata=metadata or {},
             source=source,
             status=status,
+            project_id=project_id,
+            area_id=resolved_area_id,
         )
 
         # Save to repository
-        return self.repository.create(note)
+        note = self.repository.create(note)
+        if note_type == NoteType.AREA:
+            note.area_id = note.id
+            return self.repository.update(note)
+        if project_id:
+            note, _ = self.create_link(
+                note.id, project_id, LinkType.PART_OF, bidirectional=True
+            )
+        return note
 
     def get_note(self, note_id: str) -> Optional[Note]:
         """Retrieve a note by ID."""
@@ -368,11 +420,20 @@ class ZettelService:
             raise ValueError(
                 "Tasks must be associated with a project (project_id required)"
             )
-        # Auto-fill area_id from project if not provided
-        if not area_id:
-            project = self.repository.get(project_id)
-            if project and project.area_id:
-                area_id = project.area_id
+        project = self._get_project_for_routing(project_id)
+        if project.area_id:
+            if area_id and area_id != project.area_id:
+                raise ValueError(
+                    f"area_id {area_id} does not match project "
+                    f"{project_id} area_id {project.area_id}"
+                )
+            area_id = project.area_id
+        elif not area_id:
+            raise ValueError(
+                "Tasks must resolve to an area from the linked project or explicit area_id"
+            )
+        if area_id:
+            self._get_area_for_routing(area_id)
         task = Note(
             title=title,
             content=content,
@@ -510,7 +571,12 @@ class ZettelService:
         tags: Optional[List[str]] = None,
         source: NoteSource = NoteSource.MANUAL,
     ) -> Note:
-        """Create a PROJECT-type note, optionally linked to an area."""
+        """Create a PROJECT-type note linked to an area."""
+        if not area_id:
+            raise ValueError(
+                "Projects must be associated with an area (area_id required)"
+            )
+        self._get_area_for_routing(area_id)
         metadata: Dict[str, Any] = {}
         if outcome:
             metadata["outcome"] = outcome

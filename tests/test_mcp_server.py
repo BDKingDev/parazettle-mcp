@@ -75,7 +75,10 @@ class TestMcpServer:
         # Set up return value for create_note
         mock_note = MagicMock()
         mock_note.id = "test123"
+        mock_area = MagicMock()
+        mock_area.note_type = NoteType.AREA
         self.mock_zettel_service.create_note.return_value = mock_note
+        self.mock_zettel_service.get_note.return_value = mock_area
         # Call the tool function directly
         create_note_func = self.registered_tools["pzk_create_note"]
         result = create_note_func(
@@ -84,6 +87,7 @@ class TestMcpServer:
             note_type="permanent",
             tags="tag1, tag2",
             source="transcript",
+            area_id="area123",
         )
         # Verify result
         assert "successfully" in result
@@ -96,13 +100,18 @@ class TestMcpServer:
             tags=["tag1", "tag2"],
             source=NoteSource.TRANSCRIPT,
             status=None,
+            project_id=None,
+            area_id="area123",
         )
 
     def test_create_note_tool_passes_status(self):
         """pzk_create_note forwards note status for knowledge-note triage."""
         mock_note = MagicMock()
         mock_note.id = "test123"
+        mock_area = MagicMock()
+        mock_area.note_type = NoteType.AREA
         self.mock_zettel_service.create_note.return_value = mock_note
+        self.mock_zettel_service.get_note.return_value = mock_area
 
         create_note_func = self.registered_tools["pzk_create_note"]
         result = create_note_func(
@@ -111,6 +120,7 @@ class TestMcpServer:
             note_type="permanent",
             source="transcript",
             status="inbox",
+            area_id="area123",
         )
 
         assert "successfully" in result
@@ -121,6 +131,8 @@ class TestMcpServer:
             tags=[],
             source=NoteSource.TRANSCRIPT,
             status=NoteStatus.INBOX,
+            project_id=None,
+            area_id="area123",
         )
 
     def test_create_note_tool_rejects_invalid_status(self):
@@ -153,6 +165,20 @@ class TestMcpServer:
         assert "source is required" in result
         self.mock_zettel_service.create_note.assert_not_called()
 
+    def test_create_note_tool_requires_area_or_project_for_non_area(self):
+        """pzk_create_note requires routing for non-area note types."""
+        create_note_func = self.registered_tools["pzk_create_note"]
+
+        result = create_note_func(
+            title="Test Note",
+            content="Test content",
+            note_type="permanent",
+            source="transcript",
+        )
+
+        assert "area_id or project_id is required" in result
+        self.mock_zettel_service.create_note.assert_not_called()
+
     def test_create_note_tool_allows_area_without_source(self):
         """pzk_create_note allows area notes to omit source."""
         mock_note = MagicMock()
@@ -175,7 +201,62 @@ class TestMcpServer:
             tags=["home"],
             source=NoteSource.MANUAL,
             status=None,
+            project_id=None,
+            area_id=None,
         )
+
+    def test_create_note_tool_inherits_area_from_project(self):
+        """pzk_create_note inherits area_id from the linked project."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        mock_project = MagicMock()
+        mock_project.note_type = NoteType.PROJECT
+        mock_project.area_id = "area123"
+        mock_area = MagicMock()
+        mock_area.note_type = NoteType.AREA
+        self.mock_zettel_service.create_note.return_value = mock_note
+        self.mock_zettel_service.get_note.side_effect = [mock_project, mock_area]
+
+        create_note_func = self.registered_tools["pzk_create_note"]
+        result = create_note_func(
+            title="Project Note",
+            content="Inherited routing.",
+            note_type="permanent",
+            source="transcript",
+            project_id="project123",
+        )
+
+        assert "successfully" in result
+        self.mock_zettel_service.create_note.assert_called_with(
+            title="Project Note",
+            content="Inherited routing.",
+            note_type=NoteType.PERMANENT,
+            tags=[],
+            source=NoteSource.TRANSCRIPT,
+            status=None,
+            project_id="project123",
+            area_id="area123",
+        )
+
+    def test_create_note_tool_rejects_project_area_mismatch(self):
+        """pzk_create_note rejects area_id values that conflict with project routing."""
+        mock_project = MagicMock()
+        mock_project.note_type = NoteType.PROJECT
+        mock_project.area_id = "area123"
+        self.mock_zettel_service.get_note.return_value = mock_project
+
+        create_note_func = self.registered_tools["pzk_create_note"]
+        result = create_note_func(
+            title="Project Note",
+            content="Bad routing.",
+            note_type="permanent",
+            source="transcript",
+            project_id="project123",
+            area_id="area999",
+        )
+
+        assert "does not match project" in result
+        self.mock_zettel_service.create_note.assert_not_called()
 
     def test_create_note_tool_rejects_invalid_source(self):
         """pzk_create_note rejects unknown source values."""
@@ -196,13 +277,17 @@ class TestMcpServer:
         assert "pzk_create_project" in self.registered_tools
         mock_project = MagicMock()
         mock_project.id = "project123"
+        mock_area = MagicMock()
+        mock_area.note_type = NoteType.AREA
         self.mock_zettel_service.create_project_note.return_value = mock_project
+        self.mock_zettel_service.get_note.return_value = mock_area
 
         create_project_func = self.registered_tools["pzk_create_project"]
         result = create_project_func(
             title="Launch feature",
             content="Ship by end of quarter.",
             source="transcript",
+            area_id="area123",
             tags="product, launch",
         )
 
@@ -212,10 +297,24 @@ class TestMcpServer:
             content="Ship by end of quarter.",
             outcome=None,
             deadline=None,
-            area_id=None,
+            area_id="area123",
             tags=["product", "launch"],
             source=NoteSource.TRANSCRIPT,
         )
+
+    def test_create_project_tool_requires_area(self):
+        """pzk_create_project requires a valid area_id."""
+        create_project_func = self.registered_tools["pzk_create_project"]
+
+        result = create_project_func(
+            title="Launch feature",
+            content="Ship by end of quarter.",
+            source="transcript",
+            area_id="missing-area",
+        )
+
+        assert "is not a valid area note" in result
+        self.mock_zettel_service.create_project_note.assert_not_called()
 
     def test_create_project_tool_rejects_invalid_source(self):
         """pzk_create_project rejects unknown source values."""
@@ -225,6 +324,7 @@ class TestMcpServer:
             title="Launch feature",
             content="Ship by end of quarter.",
             source="invalid",
+            area_id="area123",
         )
 
         assert "Invalid source" in result

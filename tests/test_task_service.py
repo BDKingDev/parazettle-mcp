@@ -77,6 +77,21 @@ def test_create_task_autofills_area_from_project(zettel_service, project, area):
     assert task.area_id == area.id
 
 
+def test_create_note_with_project_inherits_area_and_links(zettel_service, project, area):
+    """create_note(project_id=...) inherits area_id and creates a PART_OF link."""
+    note = zettel_service.create_note(
+        title="Project-routed note",
+        content="Supports the project.",
+        project_id=project.id,
+    )
+    assert note.project_id == project.id
+    assert note.area_id == area.id
+    stored_note_links = {lnk.link_type for lnk in zettel_service.get_note(note.id).links}
+    project_links = {lnk.link_type for lnk in zettel_service.get_note(project.id).links}
+    assert LinkType.PART_OF in stored_note_links
+    assert LinkType.HAS_PART in project_links
+
+
 def test_create_task_links_to_project(zettel_service, project):
     """create_task(project_id=...) creates a bidirectional PART_OF/HAS_PART link."""
     task = zettel_service.create_task(
@@ -308,6 +323,12 @@ def test_create_project_note(zettel_service, area):
     assert LinkType.PART_OF in project_links
 
 
+def test_create_project_note_requires_area(zettel_service):
+    """create_project_note() rejects projects without an area_id."""
+    with pytest.raises(ValueError, match="area_id required"):
+        zettel_service.create_project_note("Launch feature", "Ship by end of quarter.")
+
+
 def test_get_project_tasks(zettel_service, area):
     """get_project_tasks() returns tasks linked to the project."""
     p = zettel_service.create_project_note("Project Y", ".", area_id=area.id)
@@ -415,4 +436,5 @@ def test_create_area_note(zettel_service):
         cadence="weekly review",
     )
     assert area.note_type == NoteType.AREA
+    assert area.area_id == area.id
     assert area.metadata.get("cadence") == "weekly review"
