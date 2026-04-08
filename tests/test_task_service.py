@@ -88,6 +88,7 @@ def test_create_note_with_project_inherits_area_and_links(zettel_service, projec
     assert note.area_id == area.id
     stored_note_links = {lnk.link_type for lnk in zettel_service.get_note(note.id).links}
     project_links = {lnk.link_type for lnk in zettel_service.get_note(project.id).links}
+    assert LinkType.REFERENCE in stored_note_links
     assert LinkType.PART_OF in stored_note_links
     assert LinkType.HAS_PART in project_links
 
@@ -100,6 +101,8 @@ def test_create_task_links_to_project(zettel_service, project):
     returned_task_links = {lnk.link_type for lnk in task.links}
     task_links = {lnk.link_type for lnk in zettel_service.get_note(task.id).links}
     project_links = {lnk.link_type for lnk in zettel_service.get_note(project.id).links}
+    assert LinkType.REFERENCE in returned_task_links
+    assert LinkType.REFERENCE in task_links
     assert LinkType.PART_OF in returned_task_links
     assert LinkType.PART_OF in task_links
     assert LinkType.HAS_PART in project_links
@@ -320,6 +323,7 @@ def test_create_project_note(zettel_service, area):
     assert project.area_id == area.id
     assert project.source == NoteSource.TRANSCRIPT
     project_links = {lnk.link_type for lnk in zettel_service.get_note(project.id).links}
+    assert LinkType.REFERENCE in project_links
     assert LinkType.PART_OF in project_links
 
 

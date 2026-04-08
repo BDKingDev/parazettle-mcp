@@ -267,6 +267,7 @@ class TestMcpServer:
             content="Test content",
             note_type="permanent",
             source="invalid",
+            area_id="area123",
         )
 
         assert "Invalid source" in result
@@ -350,6 +351,49 @@ class TestMcpServer:
             status=NoteStatus.INBOX,
         )
 
+    def test_update_note_tool_passes_project_and_area_routing(self):
+        """pzk_update_note forwards project_id/area_id routing changes."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        self.mock_zettel_service.get_note.return_value = mock_note
+        self.mock_zettel_service.update_note.return_value = mock_note
+
+        update_note_func = self.registered_tools["pzk_update_note"]
+        result = update_note_func(
+            note_id="note123", project_id="project123", area_id="area456"
+        )
+
+        assert "updated successfully" in result
+        self.mock_zettel_service.update_note.assert_called_with(
+            note_id="note123",
+            title=None,
+            content=None,
+            note_type=None,
+            tags=None,
+            project_id="project123",
+            area_id="area456",
+        )
+
+    def test_update_note_tool_clears_project_id_with_empty_string(self):
+        """pzk_update_note clears project routing when given an empty string."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        self.mock_zettel_service.get_note.return_value = mock_note
+        self.mock_zettel_service.update_note.return_value = mock_note
+
+        update_note_func = self.registered_tools["pzk_update_note"]
+        result = update_note_func(note_id="note123", project_id="")
+
+        assert "updated successfully" in result
+        self.mock_zettel_service.update_note.assert_called_with(
+            note_id="note123",
+            title=None,
+            content=None,
+            note_type=None,
+            tags=None,
+            project_id=None,
+        )
+
     def test_update_note_tool_clears_status_with_empty_string(self):
         """pzk_update_note clears status when given an empty string."""
         mock_note = MagicMock()
@@ -394,6 +438,8 @@ class TestMcpServer:
         mock_note.title = "Test Note"
         mock_note.content = "Test content"
         mock_note.note_type = NoteType.PERMANENT
+        mock_note.project_id = "project123"
+        mock_note.area_id = "area456"
         mock_note.created_at.isoformat.return_value = "2023-01-01T12:00:00"
         mock_note.updated_at.isoformat.return_value = "2023-01-01T12:30:00"
         mock_tag1 = MagicMock()
@@ -412,6 +458,8 @@ class TestMcpServer:
 
         # Verify result — title appears in content body, not duplicated in header
         assert "ID: test123" in result
+        assert "Project ID: project123" in result
+        assert "Area ID: area456" in result
         assert "Test content" in result
 
         # Verify service call

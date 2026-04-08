@@ -262,3 +262,44 @@ class TestSearchService:
 
         assert len(results) == 1
         assert results[0].note.id == matching_task.id
+
+    def test_search_combined_filters_non_task_notes_by_project(self, zettel_service):
+        """Combined search should respect project_id for non-task notes too."""
+        area = zettel_service.create_area_note(
+            title="Engineering",
+            content="Software delivery and maintenance.",
+        )
+        project_a = zettel_service.create_project_note(
+            title="Project A",
+            content="Primary project.",
+            area_id=area.id,
+        )
+        project_b = zettel_service.create_project_note(
+            title="Project B",
+            content="Secondary project.",
+            area_id=area.id,
+        )
+        matching_note = zettel_service.create_note(
+            title="Python support note",
+            content="Use Python to support Project A.",
+            tags=["python", "support"],
+            project_id=project_a.id,
+        )
+        zettel_service.create_note(
+            title="Python backlog note",
+            content="Use Python to support Project B.",
+            tags=["python", "backlog"],
+            project_id=project_b.id,
+        )
+
+        search_service = SearchService(zettel_service)
+        results = search_service.search_combined(
+            text="python",
+            tags=["python"],
+            note_type=NoteType.PERMANENT,
+            project_id=project_a.id,
+            area_id=area.id,
+        )
+
+        assert len(results) == 1
+        assert results[0].note.id == matching_note.id

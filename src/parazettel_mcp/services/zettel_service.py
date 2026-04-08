@@ -60,6 +60,36 @@ class ZettelService:
             )
         return project
 
+    def _attach_area_reference_link(self, note_id: str, area_id: Optional[str]) -> Note:
+        """Ensure a newly created note references its assigned area."""
+        note = self.repository.get(note_id)
+        if not note:
+            raise ValueError(f"Note with ID {note_id} not found")
+        if not area_id or note.note_type == NoteType.AREA or area_id == note.id:
+            return note
+        note, _ = self.create_link(note.id, area_id, LinkType.REFERENCE)
+        return note
+
+    def _sync_part_of_link(
+        self, note_id: str, previous_parent_id: Optional[str], parent_id: Optional[str]
+    ) -> Note:
+        """Synchronize PART_OF/HAS_PART links with the note's current parent routing."""
+        note = self.repository.get(note_id)
+        if not note:
+            raise ValueError(f"Note with ID {note_id} not found")
+
+        if previous_parent_id and previous_parent_id != parent_id:
+            note.remove_link(previous_parent_id, LinkType.PART_OF)
+            note = self.repository.update(note)
+            previous_parent = self.repository.get(previous_parent_id)
+            if previous_parent:
+                previous_parent.remove_link(note.id, LinkType.HAS_PART)
+                self.repository.update(previous_parent)
+
+        if parent_id and previous_parent_id != parent_id:
+            note, _ = self.create_link(note.id, parent_id, LinkType.PART_OF, bidirectional=True)
+        return note
+
     def create_note(
         self,
         title: str,
@@ -114,10 +144,10 @@ class ZettelService:
         if note_type == NoteType.AREA:
             note.area_id = note.id
             return self.repository.update(note)
+        if note.area_id:
+            note = self._attach_area_reference_link(note.id, note.area_id)
         if project_id:
-            note, _ = self.create_link(
-                note.id, project_id, LinkType.PART_OF, bidirectional=True
-            )
+            note = self._sync_part_of_link(note.id, None, project_id)
         return note
 
     def get_note(self, note_id: str) -> Optional[Note]:
@@ -137,11 +167,14 @@ class ZettelService:
         tags: Optional[List[str]] = None,
         status: Any = _UNSET,
         metadata: Optional[Dict[str, Any]] = None,
+        project_id: Any = _UNSET,
+        area_id: Any = _UNSET,
     ) -> Note:
         """Update an existing note."""
         note = self.repository.get(note_id)
         if not note:
             raise ValueError(f"Note with ID {note_id} not found")
+        previous_project_id = note.project_id
 
         # Update fields
         if title is not None:
@@ -156,11 +189,39 @@ class ZettelService:
             note.status = status
         if metadata is not None:
             note.metadata = metadata
+        if project_id is not _UNSET:
+            note.project_id = project_id
+        if area_id is not _UNSET:
+            note.area_id = area_id
+
+        if note.note_type == NoteType.AREA:
+            if note.project_id:
+                raise ValueError("Area notes cannot belong to a project")
+            note.project_id = None
+            note.area_id = note.id
+        else:
+            if note.area_id:
+                self._get_area_for_routing(note.area_id)
+            if note.project_id:
+                project = self._get_project_for_routing(note.project_id)
+                if not project.area_id:
+                    raise ValueError(
+                        f"Project {note.project_id} does not have an area_id to inherit"
+                    )
+                if note.area_id and note.area_id != project.area_id:
+                    raise ValueError(
+                        f"area_id {note.area_id} does not match project "
+                        f"{note.project_id} area_id {project.area_id}"
+                    )
+                note.area_id = project.area_id
 
         note.updated_at = datetime.datetime.now()
 
         # Save to repository
-        return self.repository.update(note)
+        note = self.repository.update(note)
+        return self._sync_part_of_link(
+            note.id, previous_project_id, note.project_id
+        )
 
     def delete_note(self, note_id: str) -> None:
         """Delete a note."""
@@ -450,10 +511,8 @@ class ZettelService:
             area_id=area_id,
         )
         task = self.repository.create(task)
-        task, _ = self.create_link(
-            task.id, project_id, LinkType.PART_OF, bidirectional=True
-        )
-        return task
+        task = self._attach_area_reference_link(task.id, task.area_id)
+        return self._sync_part_of_link(task.id, None, project_id)
 
     def update_task_status(self, note_id: str, new_status: NoteStatus) -> Note:
         """Update the status of a task. Spawns a new task when a recurring one is completed."""
@@ -591,9 +650,8 @@ class ZettelService:
             source=source,
         )
         project = self.repository.create(project)
-        if area_id:
-            self.create_link(project.id, area_id, LinkType.PART_OF, bidirectional=True)
-        return project
+        project = self._attach_area_reference_link(project.id, project.area_id)
+        return self._sync_part_of_link(project.id, None, area_id)
 
     def get_project_tasks(
         self, project_id: str, status: Optional[NoteStatus] = None

@@ -25,6 +25,23 @@ def test_create_note(zettel_service):
     assert {tag.name for tag in note.tags} == {"service", "test"}
 
 
+def test_create_note_with_area_adds_reference_link(zettel_service):
+    """Creating a note with area_id should add a REFERENCE link to that area."""
+    area = zettel_service.create_area_note(
+        title="Knowledge Management",
+        content="Maintain the system.",
+    )
+    note = zettel_service.create_note(
+        title="Area-routed note",
+        content="Supports the area directly.",
+        area_id=area.id,
+    )
+
+    assert note.area_id == area.id
+    stored_links = {lnk.link_type for lnk in zettel_service.get_note(note.id).links}
+    assert LinkType.REFERENCE in stored_links
+
+
 def test_get_note(zettel_service):
     """Test retrieving a note through the service."""
     # Create a test note
@@ -76,6 +93,33 @@ def test_update_note(zettel_service):
 
     cleared_note = zettel_service.update_note(note_id=note.id, status=None)
     assert cleared_note.status is None
+
+
+def test_update_note_assigns_project_routing(zettel_service):
+    """Updating a note with project_id should inherit the project area and link it."""
+    area = zettel_service.create_area_note(
+        title="Engineering",
+        content="Software delivery and maintenance.",
+    )
+    project = zettel_service.create_project_note(
+        title="Project A",
+        content="Primary project.",
+        area_id=area.id,
+    )
+    note = zettel_service.create_note(
+        title="Loose support note",
+        content="Needs to be routed under the project.",
+        note_type=NoteType.PERMANENT,
+    )
+
+    updated_note = zettel_service.update_note(note_id=note.id, project_id=project.id)
+
+    assert updated_note.project_id == project.id
+    assert updated_note.area_id == area.id
+    stored_links = {lnk.link_type for lnk in zettel_service.get_note(note.id).links}
+    project_links = {lnk.link_type for lnk in zettel_service.get_note(project.id).links}
+    assert LinkType.PART_OF in stored_links
+    assert LinkType.HAS_PART in project_links
 
 
 def test_delete_note(zettel_service):

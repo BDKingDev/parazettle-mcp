@@ -218,6 +218,10 @@ class ZettelkastenMcpServer:
                 result += f"Type: {note.note_type.value}\n"
                 result += f"Created: {note.created_at.isoformat()}\n"
                 result += f"Updated: {note.updated_at.isoformat()}\n"
+                if note.project_id:
+                    result += f"Project ID: {note.project_id}\n"
+                if note.area_id:
+                    result += f"Area ID: {note.area_id}\n"
                 if note.tags:
                     result += f"Tags: {', '.join(tag.name for tag in note.tags)}\n"
                 # Add note content, including the Links section added by _note_to_markdown()
@@ -235,6 +239,8 @@ class ZettelkastenMcpServer:
             note_type: Optional[str] = None,
             tags: Optional[str] = None,
             status: Optional[str] = None,
+            project_id: Optional[str] = None,
+            area_id: Optional[str] = None,
         ) -> str:
             """Update an existing note.
             Args:
@@ -244,6 +250,8 @@ class ZettelkastenMcpServer:
                 note_type: New note type (optional)
                 tags: New comma-separated list of tags (optional)
                 status: New workflow status (optional). Pass empty string to clear it.
+                project_id: New project routing (optional). Pass empty string to clear it.
+                area_id: New area routing (optional). Pass empty string to clear it.
             """
             try:
                 # Get the note
@@ -283,6 +291,12 @@ class ZettelkastenMcpServer:
                             )
                     else:
                         update_kwargs["status"] = None
+                if project_id is not None:
+                    normalized_project_id = project_id.strip()
+                    update_kwargs["project_id"] = normalized_project_id or None
+                if area_id is not None:
+                    normalized_area_id = area_id.strip()
+                    update_kwargs["area_id"] = normalized_area_id or None
 
                 # Update the note
                 updated_note = self.zettel_service.update_note(**update_kwargs)
