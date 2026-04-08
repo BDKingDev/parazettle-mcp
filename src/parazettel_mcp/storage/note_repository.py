@@ -4,6 +4,7 @@ import datetime
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 from collections import OrderedDict
@@ -86,6 +87,9 @@ def _normalize_wiki_target(target: str) -> str:
     if target.endswith(".md"):
         target = target[: -len(".md")]
     return target
+
+
+_LEADING_H1_RE = re.compile(r"^\s*#\s+.*$")
 
 
 def _coerce_datetime(value: Any, fallback: datetime.datetime) -> datetime.datetime:
@@ -503,17 +507,10 @@ class NoteRepository(Repository[Note]):
         # Add any custom metadata
         metadata.update(note.metadata)
 
-        # Check if content already starts with the title
-        title_heading = f"# {note.title}"
-        if note.content.strip().startswith(title_heading):
-            content = note.content
-        else:
-            content = f"{title_heading}\n\n{note.content}"
-
         # Remove existing Links section(s)
         content_parts = []
         skip_section = False
-        for line in content.split("\n"):
+        for line in note.content.split("\n"):
             if line.strip() == "## Links":
                 skip_section = True
                 continue
@@ -525,6 +522,7 @@ class NoteRepository(Repository[Note]):
 
         # Reconstruct the content without the Links sections
         content = "\n".join(content_parts).rstrip()
+        content = self._ensure_title_heading(content, note.title)
 
         # Add links section (with deduplication)
         if note.links:
@@ -540,6 +538,24 @@ class NoteRepository(Repository[Note]):
         # Create markdown with frontmatter
         post = frontmatter.Post(content, **metadata)
         return frontmatter.dumps(post)
+
+    def _ensure_title_heading(self, content: str, title: str) -> str:
+        """Keep the first meaningful line aligned with the note title."""
+        heading = f"# {title}"
+        if not content.strip():
+            return heading
+
+        lines = content.split("\n")
+        first_meaningful = next((i for i, line in enumerate(lines) if line.strip()), None)
+        if first_meaningful is None:
+            return heading
+
+        if _LEADING_H1_RE.match(lines[first_meaningful]):
+            lines[first_meaningful] = heading
+            return "\n".join(lines).strip()
+
+        body = "\n".join(lines).strip()
+        return f"{heading}\n\n{body}" if body else heading
 
     def _note_from_db(self, db_note: DBNote) -> Note:
         """Reconstruct a Note purely from DB rows — no file read required.

@@ -95,6 +95,27 @@ def test_update_note(zettel_service):
     assert cleared_note.status is None
 
 
+def test_update_note_title_only_rewrites_heading(zettel_service):
+    """Title-only note updates should rewrite the leading H1 in stored content."""
+    note = zettel_service.create_note(
+        title="Original Service Title",
+        content="Body stays the same.",
+        note_type=NoteType.PERMANENT,
+        tags=["service"],
+    )
+
+    updated_note = zettel_service.update_note(
+        note_id=note.id,
+        title="Renamed Service Title",
+    )
+    retrieved_note = zettel_service.get_note(note.id)
+
+    assert updated_note.title == "Renamed Service Title"
+    assert retrieved_note is not None
+    assert retrieved_note.content.startswith("# Renamed Service Title\n\n")
+    assert "# Original Service Title" not in retrieved_note.content
+
+
 def test_update_note_assigns_project_routing(zettel_service):
     """Updating a note with project_id should inherit the project area and link it."""
     area = zettel_service.create_area_note(

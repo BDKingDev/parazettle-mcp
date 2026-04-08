@@ -4,7 +4,14 @@ import datetime
 
 import pytest
 
-from parazettel_mcp.models.schema import LinkType, Note, NoteStatus, NoteType, Tag
+from parazettel_mcp.models.schema import (
+    LinkType,
+    Note,
+    NoteSource,
+    NoteStatus,
+    NoteType,
+    Tag,
+)
 from parazettel_mcp.services.search_service import SearchResult, SearchService
 
 
@@ -262,6 +269,51 @@ class TestSearchService:
 
         assert len(results) == 1
         assert results[0].note.id == matching_task.id
+
+    def test_search_combined_filters_non_task_notes_by_project(self, zettel_service):
+        """Combined search should honor project_id for non-task notes as well."""
+        area = zettel_service.create_area_note(
+            title="Knowledge",
+            content="Knowledge work and systems.",
+        )
+        project_a = zettel_service.create_project_note(
+            title="Project Notes A",
+            content="Primary project.",
+            area_id=area.id,
+        )
+        project_b = zettel_service.create_project_note(
+            title="Project Notes B",
+            content="Secondary project.",
+            area_id=area.id,
+        )
+        matching_note = zettel_service.create_note(
+            title="Python research",
+            content="Python notes for the active project.",
+            note_type=NoteType.PERMANENT,
+            tags=["python", "research"],
+            project_id=project_a.id,
+            source=NoteSource.TRANSCRIPT,
+        )
+        zettel_service.create_note(
+            title="Python backlog",
+            content="Python notes for another project.",
+            note_type=NoteType.PERMANENT,
+            tags=["python", "research"],
+            project_id=project_b.id,
+            source=NoteSource.TRANSCRIPT,
+        )
+
+        search_service = SearchService(zettel_service)
+        results = search_service.search_combined(
+            text="python",
+            tags=["python"],
+            note_type=NoteType.PERMANENT,
+            project_id=project_a.id,
+            area_id=area.id,
+        )
+
+        assert len(results) == 1
+        assert results[0].note.id == matching_note.id
 
     def test_search_combined_filters_non_task_notes_by_project(self, zettel_service):
         """Combined search should respect project_id for non-task notes too."""

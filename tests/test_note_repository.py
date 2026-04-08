@@ -84,6 +84,30 @@ def test_update_note(note_repository):
     assert {tag.name for tag in retrieved_note.tags} == {"test", "updated"}
 
 
+def test_update_note_title_only_rewrites_leading_h1(note_repository):
+    """Title-only updates should replace the system H1 instead of prepending another one."""
+    note = Note(
+        title="Original Title",
+        content="This note keeps the same body.",
+        note_type=NoteType.PERMANENT,
+    )
+    saved_note = note_repository.create(note)
+
+    saved_note.title = "Renamed Title"
+    updated_note = note_repository.update(saved_note)
+    stored_markdown = (
+        note_repository.notes_dir / f"{saved_note.id}.md"
+    ).read_text(encoding="utf-8")
+    retrieved_note = note_repository.get(saved_note.id)
+
+    assert updated_note.title == "Renamed Title"
+    assert stored_markdown.count("# Renamed Title") == 1
+    assert "# Original Title" not in stored_markdown
+    assert retrieved_note is not None
+    assert retrieved_note.content.startswith("# Renamed Title\n\n")
+    assert "# Original Title" not in retrieved_note.content
+
+
 def test_create_note_persists_status(note_repository):
     """Regular notes should persist workflow status through storage."""
     note = Note(
@@ -260,6 +284,40 @@ def test_normalize_wiki_target_handles_aliases_and_fragments():
     assert _normalize_wiki_target("target-note") == "target-note"
 
 
+def test_get_normalizes_piped_wiki_link_targets(note_repository):
+    """Direct file-backed reads should normalize Obsidian aliases without a rebuild."""
+    target_path = note_repository.notes_dir / "aliased-target.md"
+    source_path = note_repository.notes_dir / "aliased-source.md"
+    target_path.write_text(
+        "---\n"
+        "id: aliased-target\n"
+        "title: Aliased Target\n"
+        "type: permanent\n"
+        "---\n"
+        "# Aliased Target\n\n"
+        "Target content.\n",
+        encoding="utf-8",
+    )
+    source_path.write_text(
+        "---\n"
+        "id: aliased-source\n"
+        "title: Aliased Source\n"
+        "type: permanent\n"
+        "---\n"
+        "# Aliased Source\n\n"
+        "Source content.\n\n"
+        "## Links\n"
+        "- reference [[aliased-target|Aliased Target]]\n",
+        encoding="utf-8",
+    )
+
+    source = note_repository.get("aliased-source")
+
+    assert source is not None
+    assert [link.target_id for link in source.links] == ["aliased-target"]
+    assert all("|" not in link.target_id for link in source.links)
+
+
 def test_coerce_datetime_handles_yaml_parsed_dates():
     """YAML may parse unquoted timestamp frontmatter before repository parsing."""
     import datetime
@@ -333,6 +391,43 @@ def test_rebuild_index_normalizes_piped_wiki_link_targets(note_repository):
     assert source is not None
     assert [link.target_id for link in source.links] == ["target-note"]
     assert [note.id for note in linked] == ["target-note"]
+
+
+def test_delete_cleans_aliased_source_links(note_repository):
+    """Deleting a linked note should remove aliased wiki-links from the source file."""
+    target_path = note_repository.notes_dir / "delete-target.md"
+    source_path = note_repository.notes_dir / "delete-source.md"
+    target_path.write_text(
+        "---\n"
+        "id: delete-target\n"
+        "title: Delete Target\n"
+        "type: permanent\n"
+        "---\n"
+        "# Delete Target\n\n"
+        "Target content.\n",
+        encoding="utf-8",
+    )
+    source_path.write_text(
+        "---\n"
+        "id: delete-source\n"
+        "title: Delete Source\n"
+        "type: permanent\n"
+        "---\n"
+        "# Delete Source\n\n"
+        "Source content.\n\n"
+        "## Links\n"
+        "- reference [[delete-target|Delete Target]]\n",
+        encoding="utf-8",
+    )
+
+    note_repository.rebuild_index()
+    note_repository.delete("delete-target")
+    refreshed = note_repository.get("delete-source")
+    stored_markdown = source_path.read_text(encoding="utf-8")
+
+    assert refreshed is not None
+    assert refreshed.links == []
+    assert "[[delete-target|Delete Target]]" not in stored_markdown
 
 
 def test_rebuild_index_creates_database_backup(note_repository):

@@ -859,6 +859,7 @@ class ZettelkastenMcpServer:
         def pzk_update_task(
             task_id: str,
             status: Optional[str] = None,
+            project_id: Optional[str] = None,
             due_date: Optional[str] = None,
             remind_at: Optional[str] = None,
             priority: Optional[int] = None,
@@ -876,6 +877,7 @@ class ZettelkastenMcpServer:
             Args:
                 task_id: ID of the task note
                 status: inbox, ready, scheduled, active, waiting, someday, done, cancelled
+                project_id: ID of the project this task belongs to
                 due_date: Due date YYYY-MM-DD
                 remind_at: Reminder date YYYY-MM-DD
                 priority: 1 (low) to 4 (critical)
@@ -911,33 +913,35 @@ class ZettelkastenMcpServer:
                         parsed_remind = _dt.date.fromisoformat(remind_at)
                     except ValueError:
                         return f"Invalid remind_at: {remind_at}. Use YYYY-MM-DD."
-
-                # Apply non-status fields directly
-                if parsed_due is not None:
-                    task.due_date = parsed_due
-                if parsed_remind is not None:
-                    task.remind_at = parsed_remind
-                if priority is not None:
-                    task.priority = priority
-                if estimated_minutes is not None:
-                    task.estimated_minutes = estimated_minutes
-                if recurrence_rule is not None:
-                    task.recurrence_rule = recurrence_rule
-                if tags is not None:
-                    from parazettel_mcp.models.schema import Tag
-                    task.tags = [Tag(name=t.strip()) for t in tags.split(",") if t.strip()]
-
-                # Persist non-status changes first so they are included in any
-                # spawned recurring instance (e.g. updated due_date carries over)
-                if any(x is not None for x in [parsed_due, parsed_remind, priority,
-                                                estimated_minutes, recurrence_rule, tags]):
-                    self.zettel_service.repository.update(task)
-
-                # Route status changes through the service to preserve business
-                # logic — specifically, completing a recurring task spawns the next instance
-                msg = f"Task {task_id} updated successfully."
+                update_kwargs = {}
                 if new_status is not None:
-                    updated = self.zettel_service.update_task_status(task_id, new_status)
+                    update_kwargs["status"] = new_status
+                if project_id is not None:
+                    normalized_project_id = project_id.strip()
+                    if not normalized_project_id:
+                        return "project_id is required. Tasks must belong to a project."
+                    update_kwargs["project_id"] = normalized_project_id
+                if due_date is not None:
+                    update_kwargs["due_date"] = parsed_due
+                if remind_at is not None:
+                    update_kwargs["remind_at"] = parsed_remind
+                if priority is not None:
+                    update_kwargs["priority"] = priority
+                if estimated_minutes is not None:
+                    update_kwargs["estimated_minutes"] = estimated_minutes
+                if recurrence_rule is not None:
+                    update_kwargs["recurrence_rule"] = recurrence_rule
+                if tags is not None:
+                    update_kwargs["tags"] = [
+                        t.strip() for t in tags.split(",") if t.strip()
+                    ]
+
+                msg = f"Task {task_id} updated successfully."
+                if update_kwargs:
+                    updated = self.zettel_service.update_task(task_id, **update_kwargs)
+                else:
+                    updated = task
+                if new_status is not None:
                     msg += f" Status set to '{new_status.value}'."
                     if new_status == NoteStatus.DONE and updated.recurrence_rule:
                         msg += " New recurring instance created."
@@ -1091,17 +1095,39 @@ class ZettelkastenMcpServer:
                 if project.note_type != NoteType.PROJECT:
                     return f"Note {project_id} is not a project (type: {project.note_type.value})"
                 tasks = self.zettel_service.get_project_tasks(project_id)
+                project_notes = self.zettel_service.get_project_notes(project_id)
+                linked_projects = self.zettel_service.get_linked_projects(project_id)
                 counts: dict = {}
                 for t in tasks:
                     s = t.status.value if t.status else "none"
                     counts[s] = counts.get(s, 0) + 1
                 outcome = project.metadata.get("outcome", "")
                 out = f"ID: {project.id}\n"
+                if project.area_id:
+                    out += f"Area ID: {project.area_id}\n"
                 if outcome:
                     out += f"Outcome: {outcome}\n"
                 out += f"Tasks: {len(tasks)} total"
                 if counts:
                     out += " (" + ", ".join(f"{v} {k}" for k, v in counts.items()) + ")"
+                out += "\n\nNotes:\n"
+                if project_notes:
+                    for note in project_notes:
+                        out += (
+                            f"- {note.title} (ID: {note.id}, type: "
+                            f"{note.note_type.value})\n"
+                        )
+                else:
+                    out += "- None\n"
+                out += "\nLinked Projects:\n"
+                if linked_projects:
+                    for linked_project in linked_projects:
+                        out += (
+                            f"- {linked_project.title} (ID: {linked_project.id}, type: "
+                            f"{linked_project.note_type.value})\n"
+                        )
+                else:
+                    out += "- None\n"
                 out += f"\n\n{project.content}\n"
                 return out
             except Exception as e:
