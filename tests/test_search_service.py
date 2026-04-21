@@ -315,8 +315,10 @@ class TestSearchService:
         assert len(results) == 1
         assert results[0].note.id == matching_note.id
 
-    def test_search_combined_filters_non_task_notes_by_project(self, zettel_service):
-        """Combined search should respect project_id for non-task notes too."""
+    def test_search_combined_filters_non_task_notes_by_project_default_type(
+        self, zettel_service
+    ):
+        """Combined search should respect project_id for non-task notes with default note type."""
         area = zettel_service.create_area_note(
             title="Engineering",
             content="Software delivery and maintenance.",
