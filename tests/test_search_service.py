@@ -4,8 +4,15 @@ import datetime
 
 import pytest
 
-from parazettle_mcp.models.schema import LinkType, Note, NoteType, Tag
-from parazettle_mcp.services.search_service import SearchResult, SearchService
+from parazettel_mcp.models.schema import (
+    LinkType,
+    Note,
+    NoteSource,
+    NoteStatus,
+    NoteType,
+    Tag,
+)
+from parazettel_mcp.services.search_service import SearchResult, SearchService
 
 
 class TestSearchService:
@@ -212,28 +219,141 @@ class TestSearchService:
         assert {n.id for n in ai_notes} == {note1.id, note2.id}
 
     def test_search_combined(self, zettel_service):
-        """Test combined search with multiple criteria."""
-        # Create test notes
-        note1 = zettel_service.create_note(
-            title="Python Data Analysis",
-            content="Using Python for data analysis.",
-            note_type=NoteType.PERMANENT,
-            tags=["python", "data science", "analysis"],
+        """Test combined search with text plus task-routing filters."""
+        area = zettel_service.create_area_note(
+            title="Engineering",
+            content="Software delivery and maintenance.",
         )
-        note2 = zettel_service.create_note(
-            title="Python Web Development",
-            content="Using Python for web development.",
-            note_type=NoteType.PERMANENT,
-            tags=["python", "web", "development"],
+        project_a = zettel_service.create_project_note(
+            title="Project A",
+            content="Primary project.",
+            area_id=area.id,
+        )
+        project_b = zettel_service.create_project_note(
+            title="Project B",
+            content="Secondary project.",
+            area_id=area.id,
         )
 
-        # Test tag-based search
-        python_notes = zettel_service.get_notes_by_tag("python")
-        assert len(python_notes) == 2
-        assert {n.id for n in python_notes} == {note1.id, note2.id}
-
-        # Test tag and type filtering
-        permanent_notes = zettel_service.repository.search(
-            note_type=NoteType.PERMANENT, tags=["python"]
+        matching_task = zettel_service.create_task(
+            title="Python cleanup",
+            content="Use Python to clean up the deployment scripts.",
+            project_id=project_a.id,
+            status=NoteStatus.READY,
+            tags=["python", "maintenance"],
         )
-        assert len(permanent_notes) == 2
+        zettel_service.create_task(
+            title="JavaScript cleanup",
+            content="Use JavaScript to clean up the frontend bundle.",
+            project_id=project_a.id,
+            status=NoteStatus.ACTIVE,
+            tags=["javascript", "maintenance"],
+        )
+        zettel_service.create_task(
+            title="Python backlog",
+            content="Use Python to explore a future automation idea.",
+            project_id=project_b.id,
+            status=NoteStatus.READY,
+            tags=["python", "backlog"],
+        )
+
+        search_service = SearchService(zettel_service)
+        results = search_service.search_combined(
+            text="python",
+            tags=["python", "javascript"],
+            note_type=NoteType.TASK,
+            status=NoteStatus.READY,
+            project_id=project_a.id,
+            area_id=area.id,
+        )
+
+        assert len(results) == 1
+        assert results[0].note.id == matching_task.id
+
+    def test_search_combined_filters_non_task_notes_by_project(self, zettel_service):
+        """Combined search should honor project_id for non-task notes as well."""
+        area = zettel_service.create_area_note(
+            title="Knowledge",
+            content="Knowledge work and systems.",
+        )
+        project_a = zettel_service.create_project_note(
+            title="Project Notes A",
+            content="Primary project.",
+            area_id=area.id,
+        )
+        project_b = zettel_service.create_project_note(
+            title="Project Notes B",
+            content="Secondary project.",
+            area_id=area.id,
+        )
+        matching_note = zettel_service.create_note(
+            title="Python research",
+            content="Python notes for the active project.",
+            note_type=NoteType.PERMANENT,
+            tags=["python", "research"],
+            project_id=project_a.id,
+            source=NoteSource.TRANSCRIPT,
+        )
+        zettel_service.create_note(
+            title="Python backlog",
+            content="Python notes for another project.",
+            note_type=NoteType.PERMANENT,
+            tags=["python", "research"],
+            project_id=project_b.id,
+            source=NoteSource.TRANSCRIPT,
+        )
+
+        search_service = SearchService(zettel_service)
+        results = search_service.search_combined(
+            text="python",
+            tags=["python"],
+            note_type=NoteType.PERMANENT,
+            project_id=project_a.id,
+            area_id=area.id,
+        )
+
+        assert len(results) == 1
+        assert results[0].note.id == matching_note.id
+
+    def test_search_combined_filters_non_task_notes_by_project_default_type(
+        self, zettel_service
+    ):
+        """Combined search should respect project_id for non-task notes with default note type."""
+        area = zettel_service.create_area_note(
+            title="Engineering",
+            content="Software delivery and maintenance.",
+        )
+        project_a = zettel_service.create_project_note(
+            title="Project A",
+            content="Primary project.",
+            area_id=area.id,
+        )
+        project_b = zettel_service.create_project_note(
+            title="Project B",
+            content="Secondary project.",
+            area_id=area.id,
+        )
+        matching_note = zettel_service.create_note(
+            title="Python support note",
+            content="Use Python to support Project A.",
+            tags=["python", "support"],
+            project_id=project_a.id,
+        )
+        zettel_service.create_note(
+            title="Python backlog note",
+            content="Use Python to support Project B.",
+            tags=["python", "backlog"],
+            project_id=project_b.id,
+        )
+
+        search_service = SearchService(zettel_service)
+        results = search_service.search_combined(
+            text="python",
+            tags=["python"],
+            note_type=NoteType.PERMANENT,
+            project_id=project_a.id,
+            area_id=area.id,
+        )
+
+        assert len(results) == 1
+        assert results[0].note.id == matching_note.id

@@ -94,8 +94,9 @@ Creates a project linked to an area.
 
 ```json
 {
-  "title": "Parazettle MCP",
-  "content": "Build and ship the parazettle fork with PARA/GTD support.",
+  "title": "Parazettel MCP",
+  "content": "Build and ship the parazettel fork with PARA/GTD support.",
+  "source": "transcript",
   "area_id": "{AREA_ID}",
   "outcome": "Working MCP server with full GTD workflow support",
   "deadline": "2026-04-30"
@@ -128,7 +129,7 @@ Lists active projects sorted by deadline.
 ```
 Projects (1):
 
-1. Parazettle MCP (ID: {PROJECT_ID})
+1. Parazettel MCP (ID: {PROJECT_ID})
    Deadline: 2026-04-30
    Outcome: Working MCP server with full GTD workflow support
 
@@ -138,7 +139,7 @@ Projects (1):
 
 ### `pzk_get_project`
 
-Returns a project with task status summary.
+Returns a project with task status summary, routed notes, and linked projects.
 
 **Call:**
 
@@ -151,14 +152,20 @@ Returns a project with task status summary.
 **Expected output:**
 
 ```
-# Parazettle MCP
 ID: {PROJECT_ID}
+Area ID: {AREA_ID}
 Outcome: Working MCP server with full GTD workflow support
 Tasks: 0 total
 
-# Parazettle MCP
+Notes:
+- None
 
-Build and ship the parazettle fork with PARA/GTD support.
+Linked Projects:
+- None
+
+# Parazettel MCP
+
+Build and ship the parazettel fork with PARA/GTD support.
 ```
 
 ---
@@ -189,7 +196,7 @@ Creates a task with the full set of optional parameters.
 **Expected output:**
 
 ```
-Task created successfully with ID: {TASK_ID}
+Task created successfully: Write integration tests (ID: {TASK_ID})
 ```
 
 **Verify tags were auto-applied** using `pzk_get_note {TASK_ID}` — the note should have `@computer` and `high-energy` in its Tags line.
@@ -215,6 +222,8 @@ ID: {TASK_ID}
 Type: task
 Created: 2026-03-26T...
 Updated: 2026-03-26T...
+Project ID: {PROJECT_ID}
+Area ID: {AREA_ID}
 Tags: @computer, high-energy
 
 # Write integration tests
@@ -222,6 +231,7 @@ Tags: @computer, high-energy
 Cover the full area → project → task → today view flow.
 
 ## Links
+- reference [[{AREA_ID}]]
 - part_of [[{PROJECT_ID}]]
 ```
 
@@ -349,7 +359,9 @@ Reminders due (1):
 
 ### `pzk_update_task`
 
-Update any mutable field on an existing task — due date, priority, estimated minutes, status, remind\_at, recurrence\_rule, or tags.
+Update any mutable field on an existing task — project assignment, due date, priority, estimated minutes, status, remind\_at, recurrence\_rule, or tags.
+
+`pzk_update_task` is the only task update tool. Use it for both ordinary field edits and status transitions.
 
 **Call (set a due date and priority):**
 
@@ -367,6 +379,41 @@ Update any mutable field on an existing task — due date, priority, estimated m
 ```
 Task {TASK_ID} updated successfully.
 ```
+
+**Call (replace tags):**
+
+```json
+{
+  "task_id": "{TASK_ID}",
+  "tags": "review, weekly"
+}
+```
+
+Passing `tags` replaces the task's existing tags with the provided list.
+
+**Call (reassign to another project):**
+
+```json
+{
+  "task_id": "{TASK_ID}",
+  "project_id": "{NEW_PROJECT_ID}"
+}
+```
+
+Reassigning the task also updates its `area_id` to match the new project. The old `part_of` / `has_part` project links are removed and the new ones are created automatically.
+
+**Call (complete a recurring task after editing other fields):**
+
+```json
+{
+  "task_id": "{RECURRING_TASK_ID}",
+  "status": "done",
+  "priority": 2,
+  "due_date": "2026-04-04"
+}
+```
+
+For recurring tasks, non-status edits are applied first, then marking the task `done` spawns the next instance. The spawned task keeps the same title, project, area, recurrence rule, and PARA linkage.
 
 **Call (invalid due date — error path):**
 
@@ -397,66 +444,9 @@ Invalid due_date: not-a-date. Use YYYY-MM-DD.
 Note {KNOWLEDGE_NOTE_ID} is not a task (type: permanent)
 ```
 
-Verify the update took effect: call `pzk_get_note {TASK_ID}` and confirm the new `Due:` and priority values appear.
+Verify the update took effect: call `pzk_get_tasks project_id="{PROJECT_ID}"` and confirm the new due date and priority values appear in the task list.
 
 Verify the task now surfaces in `pzk_get_todays_tasks` if `due_date` was set to today.
-
----
-
-### `pzk_update_task_status` — non-recurring
-
-Marks a task done. No new task spawned.
-
-**Call:**
-
-```json
-{
-  "task_id": "{OVERDUE_TASK_ID}",
-  "status": "done"
-}
-```
-
-**Expected output:**
-
-```
-Task {OVERDUE_TASK_ID} status updated to 'done'.
-```
-
-No mention of a new instance.
-
----
-
-### `pzk_update_task_status` — recurring
-
-Create a recurring task first:
-
-```json
-{
-  "title": "Weekly review",
-  "content": "Review open tasks and project status.",
-  "project_id": "{PROJECT_ID}",
-  "due_date": "2026-03-26",
-  "recurrence_rule": "weekly",
-  "status": "ready"
-}
-```
-
-Then complete it:
-
-```json
-{
-  "task_id": "{RECURRING_TASK_ID}",
-  "status": "done"
-}
-```
-
-**Expected output:**
-
-```
-Task {RECURRING_TASK_ID} status updated to 'done'. New recurring instance created.
-```
-
-Verify the new instance with `pzk_get_tasks status="ready"` — a new "Weekly review" task should appear with `due_date: 2026-04-02`.
 
 ---
 
@@ -464,7 +454,7 @@ Verify the new instance with `pzk_get_tasks status="ready"` — a new "Weekly re
 
 ### `pzk_create_note`
 
-Creates knowledge notes of each type.
+Creates knowledge notes of each type. All non-area notes must include either `area_id` or `project_id`. If `project_id` is supplied, the note inherits the project's `area_id`.
 
 **Call (permanent):**
 
@@ -473,7 +463,9 @@ Creates knowledge notes of each type.
   "title": "Atomic notes are the foundation of Zettelkasten",
   "content": "Each note contains exactly one idea. This constraint forces clarity and enables flexible recombination.",
   "note_type": "permanent",
-  "tags": "zettelkasten,methodology,atomicity"
+  "tags": "zettelkasten,methodology,atomicity",
+  "source": "transcript",
+  "area_id": "{AREA_ID}"
 }
 ```
 
@@ -485,18 +477,22 @@ Note created successfully with ID: {NOTE_ID}
 
 Also test `note_type` values: `fleeting`, `literature`, `structure`, `hub`.
 
+For project-scoped knowledge notes, swap `area_id` for `project_id`. The note will inherit the project's area and get the matching structural links.
+
 ---
 
 ### `pzk_update_note`
 
-Updates an existing note's content or metadata.
+Updates an existing note's content, metadata, and project/area routing. A title-only rename rewrites the leading H1 instead of leaving a stale heading behind.
 
 **Call:**
 
 ```json
 {
   "note_id": "{NOTE_ID}",
-  "tags": "zettelkasten,methodology,atomicity,core-principle"
+  "title": "Atomic notes are the foundation of a durable Zettelkasten",
+  "tags": "zettelkasten,methodology,atomicity,core-principle",
+  "project_id": "{PROJECT_ID}"
 }
 ```
 
@@ -578,7 +574,9 @@ Bidirectional link removed between {TASK_ID} and {NOTE_ID}
 {
   "title": "Temporary note",
   "content": "This will be deleted.",
-  "note_type": "fleeting"
+  "note_type": "fleeting",
+  "source": "transcript",
+  "area_id": "{AREA_ID}"
 }
 ```
 
@@ -648,6 +646,36 @@ Returns only task-type notes.
 
 Returns notes tagged with `zettelkasten`.
 
+**Call (combined filters):**
+
+```json
+{
+  "query": "python",
+  "tags": "python,javascript",
+  "note_type": "task",
+  "status": "ready",
+  "project_id": "{PROJECT_ID}",
+  "area_id": "{AREA_ID}",
+  "limit": 10
+}
+```
+
+All provided filters are combined with `AND`, except `tags`, which still match when any supplied tag is present.
+
+**Call (invalid status — error path):**
+
+```json
+{
+  "status": "flying"
+}
+```
+
+**Expected output:**
+
+```
+Invalid status: flying. Valid: inbox, ready, scheduled, active, waiting, someday, done, cancelled, archived, evergreen
+```
+
 ---
 
 ### `pzk_get_linked_notes`
@@ -666,7 +694,7 @@ Returns notes tagged with `zettelkasten`.
 ```
 Found N both linked notes for {NOTE_ID}:
 
-1. Parazettle MCP (ID: {PROJECT_ID})
+1. Parazettel MCP (ID: {PROJECT_ID})
    Link type: supports
    Description: Atomic design principle applies to task decomposition
 
@@ -739,10 +767,10 @@ Returns empty if no other notes share tags or links.
 ```
 Central notes in the Zettelkasten (most connected):
 
-1. Parazettle MCP (ID: {PROJECT_ID})
+1. Parazettel MCP (ID: {PROJECT_ID})
    Connections: 3
    Tags: ...
-   Preview: Build and ship the parazettle fork...
+   Preview: Build and ship the parazettel fork...
 
 ```
 
@@ -752,13 +780,13 @@ Central notes in the Zettelkasten (most connected):
 
 Notes with no incoming or outgoing links.
 
-**Setup** — create a note without linking it to anything:
+**Setup** — create an area note without linking it to anything:
 
 ```json
 {
-  "title": "Orphaned test note",
-  "content": "This note has no links.",
-  "note_type": "fleeting"
+  "title": "Orphaned test area",
+  "content": "This area intentionally has no links.",
+  "note_type": "area"
 }
 ```
 
@@ -769,12 +797,12 @@ Notes with no incoming or outgoing links.
 ```
 Found 1 orphaned notes:
 
-1. Orphaned test note (ID: {ORPHAN_ID})
-   Preview: # Orphaned test note  This note has no links.
+1. Orphaned test area (ID: {ORPHAN_ID})
+   Preview: # Orphaned test area  This area intentionally has no links.
 
 ```
 
-> **Note:** Every note in the test run is auto-linked (tasks link to projects, projects link to areas). You must explicitly create an unlinked note to get a non-empty result here.
+> **Note:** Every non-area note in the test run is auto-linked by PARA routing. An area note is the simplest way to create an intentionally orphaned note for this check.
 
 ---
 
@@ -831,7 +859,7 @@ Returns notes *updated* on or after the start date, sorted by `updated_at`. Usef
 
 ### `pzk_rebuild_index`
 
-Rebuilds the SQLite index from the Markdown files on disk. Use after manually editing `.md` files.
+Rebuilds the SQLite index from the Markdown files on disk. Use after manually editing `.md` files. A timestamped `.bak` backup of the SQLite database is created before the rebuild starts.
 
 **Call:** *(no parameters)*
 
@@ -854,23 +882,22 @@ Change in note count: 0
 | `pzk_create_area` | title, content | cadence, tags |
 | `pzk_get_area` | area\_id | — |
 | `pzk_list_areas` | — | limit |
-| `pzk_create_project` | title, content | area\_id, outcome, deadline, tags |
+| `pzk_create_project` | title, content, source, area\_id | outcome, deadline, tags |
 | `pzk_list_projects` | — | include\_done, limit |
 | `pzk_get_project` | project\_id | — |
 | `pzk_get_project_tasks` | project\_id | status, limit |
 | `pzk_create_task` | title, content, project\_id | status, due\_date, priority, energy\_level, context, remind\_at, recurrence\_rule |
-| `pzk_update_task` | task\_id | due\_date, priority, status, remind\_at, estimated\_minutes, recurrence\_rule, tags |
-| `pzk_update_task_status` | task\_id, status | — |
+| `pzk_update_task` | task\_id | project\_id, due\_date, priority, status, remind\_at, estimated\_minutes, recurrence\_rule, tags |
 | `pzk_get_tasks` | — | status, project\_id, due\_date, overdue\_only, priority, limit |
 | `pzk_get_todays_tasks` | — | include\_overdue |
 | `pzk_get_reminders` | — | limit |
-| `pzk_create_note` | title, content | note\_type, tags |
+| `pzk_create_note` | title, content | note\_type, source, area\_id, project\_id, tags |
 | `pzk_get_note` | identifier | — |
-| `pzk_update_note` | note\_id | title, content, note\_type, tags |
+| `pzk_update_note` | note\_id | title, content, note\_type, tags, status, project\_id, area\_id |
 | `pzk_delete_note` | note\_id | — |
 | `pzk_create_link` | source\_id, target\_id | link\_type, description, bidirectional |
 | `pzk_remove_link` | source\_id, target\_id | bidirectional |
-| `pzk_search_notes` | — | query, tags, note\_type, limit |
+| `pzk_search_notes` | — | query, tags, note\_type, status, project\_id, area\_id, limit |
 | `pzk_get_linked_notes` | note\_id | direction |
 | `pzk_get_all_tags` | — | — |
 | `pzk_find_similar_notes` | note\_id | threshold, limit |

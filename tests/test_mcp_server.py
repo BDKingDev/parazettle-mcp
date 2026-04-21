@@ -1,11 +1,12 @@
 # tests/test_mcp_server.py
 """Tests for the MCP server implementation."""
+import datetime
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from parazettle_mcp.models.schema import LinkType, NoteType
-from parazettle_mcp.server.mcp_server import ZettelkastenMcpServer
+from parazettel_mcp.models.schema import LinkType, NoteSource, NoteStatus, NoteType
+from parazettel_mcp.server.mcp_server import ZettelkastenMcpServer
 
 
 class TestMcpServer:
@@ -37,14 +38,14 @@ class TestMcpServer:
 
         # Create patchers for FastMCP, ZettelService, and SearchService
         self.mcp_patcher = patch(
-            "parazettle_mcp.server.mcp_server.FastMCP", return_value=self.mock_mcp
+            "parazettel_mcp.server.mcp_server.FastMCP", return_value=self.mock_mcp
         )
         self.zettel_patcher = patch(
-            "parazettle_mcp.server.mcp_server.ZettelService",
+            "parazettel_mcp.server.mcp_server.ZettelService",
             return_value=self.mock_zettel_service,
         )
         self.search_patcher = patch(
-            "parazettle_mcp.server.mcp_server.SearchService",
+            "parazettel_mcp.server.mcp_server.SearchService",
             return_value=self.mock_search_service,
         )
 
@@ -75,7 +76,10 @@ class TestMcpServer:
         # Set up return value for create_note
         mock_note = MagicMock()
         mock_note.id = "test123"
+        mock_area = MagicMock()
+        mock_area.note_type = NoteType.AREA
         self.mock_zettel_service.create_note.return_value = mock_note
+        self.mock_zettel_service.get_note.return_value = mock_area
         # Call the tool function directly
         create_note_func = self.registered_tools["pzk_create_note"]
         result = create_note_func(
@@ -83,6 +87,8 @@ class TestMcpServer:
             content="Test content",
             note_type="permanent",
             tags="tag1, tag2",
+            source="transcript",
+            area_id="area123",
         )
         # Verify result
         assert "successfully" in result
@@ -93,7 +99,334 @@ class TestMcpServer:
             content="Test content",
             note_type=NoteType.PERMANENT,
             tags=["tag1", "tag2"],
+            source=NoteSource.TRANSCRIPT,
+            status=None,
+            project_id=None,
+            area_id="area123",
         )
+
+    def test_create_note_tool_passes_status(self):
+        """pzk_create_note forwards note status for knowledge-note triage."""
+        mock_note = MagicMock()
+        mock_note.id = "test123"
+        mock_area = MagicMock()
+        mock_area.note_type = NoteType.AREA
+        self.mock_zettel_service.create_note.return_value = mock_note
+        self.mock_zettel_service.get_note.return_value = mock_area
+
+        create_note_func = self.registered_tools["pzk_create_note"]
+        result = create_note_func(
+            title="Inbox Note",
+            content="Captured for later processing.",
+            note_type="permanent",
+            source="transcript",
+            status="inbox",
+            area_id="area123",
+        )
+
+        assert "successfully" in result
+        self.mock_zettel_service.create_note.assert_called_with(
+            title="Inbox Note",
+            content="Captured for later processing.",
+            note_type=NoteType.PERMANENT,
+            tags=[],
+            source=NoteSource.TRANSCRIPT,
+            status=NoteStatus.INBOX,
+            project_id=None,
+            area_id="area123",
+        )
+
+    def test_create_note_tool_rejects_invalid_status(self):
+        """pzk_create_note returns the valid note-status list for bad values."""
+        create_note_func = self.registered_tools["pzk_create_note"]
+
+        result = create_note_func(
+            title="Inbox Note",
+            content="Captured for later processing.",
+            note_type="permanent",
+            source="transcript",
+            status="flying",
+        )
+
+        assert "Invalid status" in result
+        assert "inbox" in result
+        self.mock_zettel_service.create_note.assert_not_called()
+
+    def test_create_note_tool_requires_source_for_non_area(self):
+        """pzk_create_note requires source for all note types except area."""
+        create_note_func = self.registered_tools["pzk_create_note"]
+
+        result = create_note_func(
+            title="Test Note",
+            content="Test content",
+            note_type="permanent",
+            tags="tag1, tag2",
+        )
+
+        assert "source is required" in result
+        self.mock_zettel_service.create_note.assert_not_called()
+
+    def test_create_note_tool_requires_area_or_project_for_non_area(self):
+        """pzk_create_note requires routing for non-area note types."""
+        create_note_func = self.registered_tools["pzk_create_note"]
+
+        result = create_note_func(
+            title="Test Note",
+            content="Test content",
+            note_type="permanent",
+            source="transcript",
+        )
+
+        assert "area_id or project_id is required" in result
+        self.mock_zettel_service.create_note.assert_not_called()
+
+    def test_create_note_tool_allows_area_without_source(self):
+        """pzk_create_note allows area notes to omit source."""
+        mock_note = MagicMock()
+        mock_note.id = "area123"
+        self.mock_zettel_service.create_note.return_value = mock_note
+
+        create_note_func = self.registered_tools["pzk_create_note"]
+        result = create_note_func(
+            title="Household Systems",
+            content="Ongoing responsibilities.",
+            note_type="area",
+            tags="home",
+        )
+
+        assert "successfully" in result
+        self.mock_zettel_service.create_note.assert_called_with(
+            title="Household Systems",
+            content="Ongoing responsibilities.",
+            note_type=NoteType.AREA,
+            tags=["home"],
+            source=NoteSource.MANUAL,
+            status=None,
+            project_id=None,
+            area_id=None,
+        )
+
+    def test_create_note_tool_inherits_area_from_project(self):
+        """pzk_create_note inherits area_id from the linked project."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        mock_project = MagicMock()
+        mock_project.note_type = NoteType.PROJECT
+        mock_project.area_id = "area123"
+        mock_area = MagicMock()
+        mock_area.note_type = NoteType.AREA
+        self.mock_zettel_service.create_note.return_value = mock_note
+        self.mock_zettel_service.get_note.side_effect = [mock_project, mock_area]
+
+        create_note_func = self.registered_tools["pzk_create_note"]
+        result = create_note_func(
+            title="Project Note",
+            content="Inherited routing.",
+            note_type="permanent",
+            source="transcript",
+            project_id="project123",
+        )
+
+        assert "successfully" in result
+        self.mock_zettel_service.create_note.assert_called_with(
+            title="Project Note",
+            content="Inherited routing.",
+            note_type=NoteType.PERMANENT,
+            tags=[],
+            source=NoteSource.TRANSCRIPT,
+            status=None,
+            project_id="project123",
+            area_id="area123",
+        )
+
+    def test_create_note_tool_rejects_project_area_mismatch(self):
+        """pzk_create_note rejects area_id values that conflict with project routing."""
+        mock_project = MagicMock()
+        mock_project.note_type = NoteType.PROJECT
+        mock_project.area_id = "area123"
+        self.mock_zettel_service.get_note.return_value = mock_project
+
+        create_note_func = self.registered_tools["pzk_create_note"]
+        result = create_note_func(
+            title="Project Note",
+            content="Bad routing.",
+            note_type="permanent",
+            source="transcript",
+            project_id="project123",
+            area_id="area999",
+        )
+
+        assert "does not match project" in result
+        self.mock_zettel_service.create_note.assert_not_called()
+
+    def test_create_note_tool_rejects_invalid_source(self):
+        """pzk_create_note rejects unknown source values."""
+        create_note_func = self.registered_tools["pzk_create_note"]
+
+        result = create_note_func(
+            title="Test Note",
+            content="Test content",
+            note_type="permanent",
+            source="invalid",
+            area_id="area123",
+        )
+
+        assert "Invalid source" in result
+        self.mock_zettel_service.create_note.assert_not_called()
+
+    def test_create_project_tool_requires_and_passes_source(self):
+        """pzk_create_project validates and forwards source."""
+        assert "pzk_create_project" in self.registered_tools
+        mock_project = MagicMock()
+        mock_project.id = "project123"
+        mock_area = MagicMock()
+        mock_area.note_type = NoteType.AREA
+        self.mock_zettel_service.create_project_note.return_value = mock_project
+        self.mock_zettel_service.get_note.return_value = mock_area
+
+        create_project_func = self.registered_tools["pzk_create_project"]
+        result = create_project_func(
+            title="Launch feature",
+            content="Ship by end of quarter.",
+            source="transcript",
+            area_id="area123",
+            tags="product, launch",
+        )
+
+        assert "successfully" in result
+        self.mock_zettel_service.create_project_note.assert_called_with(
+            title="Launch feature",
+            content="Ship by end of quarter.",
+            outcome=None,
+            deadline=None,
+            area_id="area123",
+            tags=["product", "launch"],
+            source=NoteSource.TRANSCRIPT,
+        )
+
+    def test_create_project_tool_requires_area(self):
+        """pzk_create_project requires a valid area_id."""
+        create_project_func = self.registered_tools["pzk_create_project"]
+
+        result = create_project_func(
+            title="Launch feature",
+            content="Ship by end of quarter.",
+            source="transcript",
+            area_id="missing-area",
+        )
+
+        assert "is not a valid area note" in result
+        self.mock_zettel_service.create_project_note.assert_not_called()
+
+    def test_create_project_tool_rejects_invalid_source(self):
+        """pzk_create_project rejects unknown source values."""
+        create_project_func = self.registered_tools["pzk_create_project"]
+
+        result = create_project_func(
+            title="Launch feature",
+            content="Ship by end of quarter.",
+            source="invalid",
+            area_id="area123",
+        )
+
+        assert "Invalid source" in result
+        self.mock_zettel_service.create_project_note.assert_not_called()
+
+    def test_update_note_tool_passes_status(self):
+        """pzk_update_note forwards note status updates."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        self.mock_zettel_service.get_note.return_value = mock_note
+        self.mock_zettel_service.update_note.return_value = mock_note
+
+        update_note_func = self.registered_tools["pzk_update_note"]
+        result = update_note_func(note_id="note123", status="inbox")
+
+        assert "updated successfully" in result
+        self.mock_zettel_service.update_note.assert_called_with(
+            note_id="note123",
+            title=None,
+            content=None,
+            note_type=None,
+            tags=None,
+            status=NoteStatus.INBOX,
+        )
+
+    def test_update_note_tool_passes_project_and_area_routing(self):
+        """pzk_update_note forwards project_id/area_id routing changes."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        self.mock_zettel_service.get_note.return_value = mock_note
+        self.mock_zettel_service.update_note.return_value = mock_note
+
+        update_note_func = self.registered_tools["pzk_update_note"]
+        result = update_note_func(
+            note_id="note123", project_id="project123", area_id="area456"
+        )
+
+        assert "updated successfully" in result
+        self.mock_zettel_service.update_note.assert_called_with(
+            note_id="note123",
+            title=None,
+            content=None,
+            note_type=None,
+            tags=None,
+            project_id="project123",
+            area_id="area456",
+        )
+
+    def test_update_note_tool_clears_project_id_with_empty_string(self):
+        """pzk_update_note clears project routing when given an empty string."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        self.mock_zettel_service.get_note.return_value = mock_note
+        self.mock_zettel_service.update_note.return_value = mock_note
+
+        update_note_func = self.registered_tools["pzk_update_note"]
+        result = update_note_func(note_id="note123", project_id="")
+
+        assert "updated successfully" in result
+        self.mock_zettel_service.update_note.assert_called_with(
+            note_id="note123",
+            title=None,
+            content=None,
+            note_type=None,
+            tags=None,
+            project_id=None,
+        )
+
+    def test_update_note_tool_clears_status_with_empty_string(self):
+        """pzk_update_note clears status when given an empty string."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        self.mock_zettel_service.get_note.return_value = mock_note
+        self.mock_zettel_service.update_note.return_value = mock_note
+
+        update_note_func = self.registered_tools["pzk_update_note"]
+        result = update_note_func(note_id="note123", status="")
+
+        assert "updated successfully" in result
+        self.mock_zettel_service.update_note.assert_called_with(
+            note_id="note123",
+            title=None,
+            content=None,
+            note_type=None,
+            tags=None,
+            status=None,
+        )
+
+    def test_update_note_tool_rejects_invalid_status(self):
+        """pzk_update_note returns the valid note-status list for bad values."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        self.mock_zettel_service.get_note.return_value = mock_note
+
+        update_note_func = self.registered_tools["pzk_update_note"]
+        result = update_note_func(note_id="note123", status="flying")
+
+        assert "Invalid status" in result
+        assert "inbox" in result
+        self.mock_zettel_service.update_note.assert_not_called()
 
     def test_get_note_tool(self):
         """Test the pzk_get_note tool."""
@@ -104,8 +437,10 @@ class TestMcpServer:
         mock_note = MagicMock()
         mock_note.id = "test123"
         mock_note.title = "Test Note"
-        mock_note.content = "Test content"
+        mock_note.content = "# Test Note\n\nTest content"
         mock_note.note_type = NoteType.PERMANENT
+        mock_note.project_id = "project123"
+        mock_note.area_id = "area456"
         mock_note.created_at.isoformat.return_value = "2023-01-01T12:00:00"
         mock_note.updated_at.isoformat.return_value = "2023-01-01T12:30:00"
         mock_tag1 = MagicMock()
@@ -124,10 +459,32 @@ class TestMcpServer:
 
         # Verify result — title appears in content body, not duplicated in header
         assert "ID: test123" in result
+        assert "Project ID: project123" in result
+        assert "Area ID: area456" in result
         assert "Test content" in result
 
         # Verify service call
         self.mock_zettel_service.get_note.assert_called_with("test123")
+
+    def test_get_note_tool_renders_current_heading_once(self):
+        """pzk_get_note should reflect the current heading without stale duplicates."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        mock_note.title = "Renamed Note"
+        mock_note.content = "# Renamed Note\n\nBody content"
+        mock_note.note_type = NoteType.PERMANENT
+        mock_note.project_id = None
+        mock_note.area_id = None
+        mock_note.created_at.isoformat.return_value = "2023-01-01T12:00:00"
+        mock_note.updated_at.isoformat.return_value = "2023-01-01T12:30:00"
+        mock_note.tags = []
+        self.mock_zettel_service.get_note.return_value = mock_note
+
+        get_note_func = self.registered_tools["pzk_get_note"]
+        result = get_note_func(identifier="note123")
+
+        assert result.count("# Renamed Note") == 1
+        assert "# Old Note" not in result
 
     def test_create_link_tool(self):
         """Test the pzk_create_link tool."""
@@ -208,7 +565,13 @@ class TestMcpServer:
         # Call the tool function directly
         search_notes_func = self.registered_tools["pzk_search_notes"]
         result = search_notes_func(
-            query="test query", tags="tag1, tag2", note_type="permanent", limit=10
+            query="test query",
+            tags="tag1, tag2",
+            note_type="permanent",
+            status="ready",
+            project_id="project123",
+            area_id="area456",
+            limit=10,
         )
 
         # Verify result
@@ -218,7 +581,52 @@ class TestMcpServer:
 
         # Verify service call
         self.mock_search_service.search_combined.assert_called_with(
-            text="test query", tags=["tag1", "tag2"], note_type=NoteType.PERMANENT
+            text="test query",
+            tags=["tag1", "tag2"],
+            note_type=NoteType.PERMANENT,
+            status=NoteStatus.READY,
+            project_id="project123",
+            area_id="area456",
+        )
+
+    def test_search_notes_rejects_invalid_status(self):
+        """pzk_search_notes returns the valid status list for invalid status values."""
+        search_notes_func = self.registered_tools["pzk_search_notes"]
+        result = search_notes_func(status="flying")
+
+        assert "Invalid status" in result
+        assert "inbox" in result
+        self.mock_search_service.search_combined.assert_not_called()
+
+    def test_create_task_tool_response_includes_title_and_id(self):
+        """pzk_create_task returns a human-readable success message with title and ID."""
+        mock_task = MagicMock()
+        mock_task.id = "task123"
+        mock_task.title = "Weekly review"
+        self.mock_zettel_service.create_task.return_value = mock_task
+
+        create_task_func = self.registered_tools["pzk_create_task"]
+        result = create_task_func(
+            title="Weekly review",
+            content="Review projects and notes.",
+            project_id="project123",
+        )
+
+        assert "Weekly review" in result
+        assert "task123" in result
+        self.mock_zettel_service.create_task.assert_called_with(
+            title="Weekly review",
+            content="Review projects and notes.",
+            status=NoteStatus.INBOX,
+            tags=[],
+            project_id="project123",
+            area_id=None,
+            due_date=None,
+            remind_at=None,
+            priority=None,
+            recurrence_rule=None,
+            estimated_minutes=None,
+            source=NoteSource.MANUAL,
         )
 
     def test_update_task_tool_registered(self):
@@ -232,14 +640,15 @@ class TestMcpServer:
         mock_task.note_type = NoteType.TASK
         mock_task.tags = []
         self.mock_zettel_service.get_note.return_value = mock_task
-        self.mock_zettel_service.repository = MagicMock()
+        self.mock_zettel_service.update_task.return_value = mock_task
 
         fn = self.registered_tools["pzk_update_task"]
         result = fn(task_id="task001", due_date="2026-04-01")
 
         assert "updated successfully" in result
-        assert mock_task.due_date is not None
-        self.mock_zettel_service.repository.update.assert_called_once_with(mock_task)
+        self.mock_zettel_service.update_task.assert_called_once_with(
+            "task001", due_date=datetime.date(2026, 4, 1)
+        )
 
     def test_update_task_rejects_non_task_note(self):
         """pzk_update_task returns an error if the note is not a task."""
@@ -251,7 +660,7 @@ class TestMcpServer:
         result = fn(task_id="note001", priority=3)
 
         assert "not a task" in result
-        self.mock_zettel_service.repository.update.assert_not_called()
+        self.mock_zettel_service.update_task.assert_not_called()
 
     def test_update_task_rejects_invalid_due_date(self):
         """pzk_update_task returns an error for a malformed due_date."""
@@ -263,7 +672,7 @@ class TestMcpServer:
         result = fn(task_id="task001", due_date="not-a-date")
 
         assert "Invalid due_date" in result
-        self.mock_zettel_service.repository.update.assert_not_called()
+        self.mock_zettel_service.update_task.assert_not_called()
 
     def test_update_task_rejects_invalid_status(self):
         """pzk_update_task returns an error for an unrecognised status value."""
@@ -275,23 +684,23 @@ class TestMcpServer:
         result = fn(task_id="task001", status="flying")
 
         assert "Invalid status" in result
-        self.mock_zettel_service.repository.update.assert_not_called()
+        self.mock_zettel_service.update_task.assert_not_called()
 
     def test_update_task_routes_status_through_service(self):
-        """pzk_update_task calls update_task_status (not repository.update) for status changes."""
+        """pzk_update_task routes status changes through service.update_task."""
         mock_task = MagicMock()
         mock_task.note_type = NoteType.TASK
         mock_task.recurrence_rule = None
         self.mock_zettel_service.get_note.return_value = mock_task
-        self.mock_zettel_service.update_task_status.return_value = mock_task
+        self.mock_zettel_service.update_task.return_value = mock_task
 
         fn = self.registered_tools["pzk_update_task"]
         result = fn(task_id="task001", status="done")
 
         assert "done" in result
-        self.mock_zettel_service.update_task_status.assert_called_once()
-        # repository.update should NOT be called for a status-only change
-        self.mock_zettel_service.repository.update.assert_not_called()
+        self.mock_zettel_service.update_task.assert_called_once_with(
+            "task001", status=NoteStatus.DONE
+        )
 
     def test_update_task_announces_recurring_spawn(self):
         """pzk_update_task includes 'recurring instance created' when a recurring task is completed."""
@@ -299,12 +708,64 @@ class TestMcpServer:
         mock_task.note_type = NoteType.TASK
         mock_task.recurrence_rule = "weekly"
         self.mock_zettel_service.get_note.return_value = mock_task
-        self.mock_zettel_service.update_task_status.return_value = mock_task
+        self.mock_zettel_service.update_task.return_value = mock_task
 
         fn = self.registered_tools["pzk_update_task"]
         result = fn(task_id="task001", status="done")
 
         assert "recurring instance created" in result
+
+    def test_update_task_routes_project_reassignment_through_service(self):
+        """pzk_update_task should forward project reassignment through service.update_task."""
+        mock_task = MagicMock()
+        mock_task.note_type = NoteType.TASK
+        mock_task.recurrence_rule = None
+        self.mock_zettel_service.get_note.return_value = mock_task
+        self.mock_zettel_service.update_task.return_value = mock_task
+
+        fn = self.registered_tools["pzk_update_task"]
+        result = fn(task_id="task001", project_id="project999", priority=3)
+
+        assert "updated successfully" in result
+        self.mock_zettel_service.update_task.assert_called_once_with(
+            "task001", project_id="project999", priority=3
+        )
+
+    def test_get_project_tool_lists_notes_and_linked_projects(self):
+        """pzk_get_project should include routed notes and linked projects."""
+        mock_project = MagicMock()
+        mock_project.id = "project123"
+        mock_project.note_type = NoteType.PROJECT
+        mock_project.area_id = "area123"
+        mock_project.metadata = {"outcome": "Ship it"}
+        mock_project.content = "# Project\n\nBody"
+
+        ready_task = MagicMock()
+        ready_task.status = NoteStatus.READY
+        done_task = MagicMock()
+        done_task.status = NoteStatus.DONE
+        linked_note = MagicMock()
+        linked_note.id = "note123"
+        linked_note.title = "Working Notes"
+        linked_note.note_type = NoteType.PERMANENT
+        linked_project = MagicMock()
+        linked_project.id = "project999"
+        linked_project.title = "Parent Project"
+        linked_project.note_type = NoteType.PROJECT
+
+        self.mock_zettel_service.get_note.return_value = mock_project
+        self.mock_zettel_service.get_project_tasks.return_value = [ready_task, done_task]
+        self.mock_zettel_service.get_project_notes.return_value = [linked_note]
+        self.mock_zettel_service.get_linked_projects.return_value = [linked_project]
+
+        fn = self.registered_tools["pzk_get_project"]
+        result = fn(project_id="project123")
+
+        assert "Area ID: area123" in result
+        assert "Notes:" in result
+        assert "Working Notes (ID: note123, type: permanent)" in result
+        assert "Linked Projects:" in result
+        assert "Parent Project (ID: project999, type: project)" in result
 
     def test_update_task_status_tool_removed(self):
         """pzk_update_task_status should no longer be registered; use pzk_update_task instead."""

@@ -1,8 +1,12 @@
 """Tests for the NoteRepository class."""
 
+from pathlib import Path
+
 import pytest
 
-from parazettle_mcp.models.schema import LinkType, Note, NoteType, Tag
+from parazettel_mcp.config import config
+from parazettel_mcp.models.schema import LinkType, Note, NoteStatus, NoteType, Tag
+from parazettel_mcp.storage.note_repository import _coerce_datetime, _normalize_wiki_target
 
 
 def test_create_note(note_repository):
@@ -58,6 +62,7 @@ def test_update_note(note_repository):
         content="This is a test note for updating.",
         note_type=NoteType.PERMANENT,
         tags=[Tag(name="test"), Tag(name="update")],
+        status=NoteStatus.INBOX,
     )
     # Save to repository
     saved_note = note_repository.create(note)
@@ -65,6 +70,7 @@ def test_update_note(note_repository):
     saved_note.title = "Updated Test Note"
     saved_note.content = "This note has been updated."
     saved_note.tags = [Tag(name="test"), Tag(name="updated")]
+    saved_note.status = NoteStatus.EVERGREEN
     # Save the update
     updated_note = note_repository.update(saved_note)
     # Retrieve the note again
@@ -76,7 +82,49 @@ def test_update_note(note_repository):
     # Note content includes the title as a markdown header - account for this
     expected_content = f"# {updated_note.title}\n\n{updated_note.content}"
     assert retrieved_note.content.strip() == expected_content.strip()
+    assert retrieved_note.status == NoteStatus.EVERGREEN
     assert {tag.name for tag in retrieved_note.tags} == {"test", "updated"}
+
+
+def test_update_note_title_only_rewrites_leading_h1(note_repository):
+    """Title-only updates should replace the system H1 instead of prepending another one."""
+    note = Note(
+        title="Original Title",
+        content="This note keeps the same body.",
+        note_type=NoteType.PERMANENT,
+    )
+    saved_note = note_repository.create(note)
+
+    saved_note.title = "Renamed Title"
+    updated_note = note_repository.update(saved_note)
+    stored_markdown = (
+        note_repository.notes_dir / f"{saved_note.id}.md"
+    ).read_text(encoding="utf-8")
+    retrieved_note = note_repository.get(saved_note.id)
+
+    assert updated_note.title == "Renamed Title"
+    assert stored_markdown.count("# Renamed Title") == 1
+    assert "# Original Title" not in stored_markdown
+    assert retrieved_note is not None
+    assert retrieved_note.content.startswith("# Renamed Title\n\n")
+    assert "# Original Title" not in retrieved_note.content
+
+
+def test_create_note_persists_status(note_repository):
+    """Regular notes should persist workflow status through storage."""
+    note = Note(
+        title="Status Test Note",
+        content="This note starts in inbox.",
+        note_type=NoteType.PERMANENT,
+        status=NoteStatus.INBOX,
+        tags=[Tag(name="status")],
+    )
+
+    saved_note = note_repository.create(note)
+    retrieved_note = note_repository.get(saved_note.id)
+
+    assert retrieved_note is not None
+    assert retrieved_note.status == NoteStatus.INBOX
 
 
 def test_delete_note(note_repository):
@@ -205,6 +253,201 @@ def test_delete_removes_dangling_links_from_source_files(note_repository):
     assert all(lnk.target_id != saved_target.id for lnk in refreshed.links)
 
 
+def test_invalid_frontmatter_status_is_ignored_on_read_and_rebuild(note_repository):
+    """Malformed status frontmatter should not break reads or index rebuilds."""
+    bad_note_path = note_repository.notes_dir / "bad-status.md"
+    bad_note_path.write_text(
+        "---\n"
+        "id: bad-status\n"
+        "title: Bad Status\n"
+        "type: task\n"
+        "status: flying\n"
+        "project_id: project123\n"
+        "---\n"
+        "# Bad Status\n\n"
+        "This task has an invalid stored status.\n",
+        encoding="utf-8",
+    )
+
+    note_repository.rebuild_index()
+    note = note_repository.get("bad-status")
+
+    assert note is not None
+    assert note.title == "Bad Status"
+    assert note.note_type == NoteType.TASK
+    assert note.status is None
+
+
+def test_normalize_wiki_target_handles_aliases_and_fragments():
+    """Wiki-link target parsing should keep only the note id."""
+    assert _normalize_wiki_target("target-note|Target Note") == "target-note"
+    assert _normalize_wiki_target("target-note#Section|Target Note") == "target-note"
+    assert _normalize_wiki_target("target-note.md|Target Note") == "target-note"
+    assert _normalize_wiki_target("target-note") == "target-note"
+
+
+def test_get_normalizes_piped_wiki_link_targets(note_repository):
+    """Direct file-backed reads should normalize Obsidian aliases without a rebuild."""
+    target_path = note_repository.notes_dir / "aliased-target.md"
+    source_path = note_repository.notes_dir / "aliased-source.md"
+    target_path.write_text(
+        "---\n"
+        "id: aliased-target\n"
+        "title: Aliased Target\n"
+        "type: permanent\n"
+        "---\n"
+        "# Aliased Target\n\n"
+        "Target content.\n",
+        encoding="utf-8",
+    )
+    source_path.write_text(
+        "---\n"
+        "id: aliased-source\n"
+        "title: Aliased Source\n"
+        "type: permanent\n"
+        "---\n"
+        "# Aliased Source\n\n"
+        "Source content.\n\n"
+        "## Links\n"
+        "- reference [[aliased-target|Aliased Target]]\n",
+        encoding="utf-8",
+    )
+
+    source = note_repository.get("aliased-source")
+
+    assert source is not None
+    assert [link.target_id for link in source.links] == ["aliased-target"]
+    assert all("|" not in link.target_id for link in source.links)
+
+
+def test_coerce_datetime_handles_yaml_parsed_dates():
+    """YAML may parse unquoted timestamp frontmatter before repository parsing."""
+    import datetime
+
+    fallback = datetime.datetime(2026, 1, 1, 0, 0, 0)
+    parsed = datetime.datetime(2026, 4, 3, 14, 47, 1, 126472)
+    parsed_date = datetime.date(2026, 4, 3)
+
+    assert _coerce_datetime(parsed, fallback) == parsed
+    assert _coerce_datetime(parsed_date, fallback) == datetime.datetime(2026, 4, 3)
+    assert _coerce_datetime("2026-04-03T14:47:01.126472", fallback) == parsed
+    assert _coerce_datetime(None, fallback) == fallback
+
+
+def test_rebuild_index_accepts_yaml_parsed_timestamp_frontmatter(note_repository):
+    """Unquoted YAML timestamps should not cause rebuild to skip the note."""
+    note_path = note_repository.notes_dir / "timestamp-note.md"
+    note_path.write_text(
+        "---\n"
+        "id: timestamp-note\n"
+        "title: Timestamp Note\n"
+        "type: permanent\n"
+        "created: 2026-04-03T14:47:01.126472\n"
+        "updated: 2026-04-03T14:48:49.332913\n"
+        "---\n"
+        "# Timestamp Note\n\n"
+        "Timestamp content.\n",
+        encoding="utf-8",
+    )
+
+    note_repository.rebuild_index()
+    note = note_repository.get("timestamp-note")
+
+    assert note is not None
+    assert note.created_at.year == 2026
+    assert note.updated_at.minute == 48
+
+
+def test_rebuild_index_normalizes_piped_wiki_link_targets(note_repository):
+    """Rebuild should index the note id, not the display alias, for piped links."""
+    source_path = note_repository.notes_dir / "source-note.md"
+    target_path = note_repository.notes_dir / "target-note.md"
+    target_path.write_text(
+        "---\n"
+        "id: target-note\n"
+        "title: Target Note\n"
+        "type: permanent\n"
+        "---\n"
+        "# Target Note\n\n"
+        "Target content.\n",
+        encoding="utf-8",
+    )
+    source_path.write_text(
+        "---\n"
+        "id: source-note\n"
+        "title: Source Note\n"
+        "type: permanent\n"
+        "---\n"
+        "# Source Note\n\n"
+        "Source content.\n\n"
+        "## Links\n"
+        "- reference [[target-note|Target Note]] Alias should not become target_id.\n",
+        encoding="utf-8",
+    )
+
+    note_repository.rebuild_index()
+
+    source = note_repository.get("source-note")
+    linked = note_repository.find_linked_notes("source-note", "outgoing")
+
+    assert source is not None
+    assert [link.target_id for link in source.links] == ["target-note"]
+    assert [note.id for note in linked] == ["target-note"]
+
+
+def test_delete_cleans_aliased_source_links(note_repository):
+    """Deleting a linked note should remove aliased wiki-links from the source file."""
+    target_path = note_repository.notes_dir / "delete-target.md"
+    source_path = note_repository.notes_dir / "delete-source.md"
+    target_path.write_text(
+        "---\n"
+        "id: delete-target\n"
+        "title: Delete Target\n"
+        "type: permanent\n"
+        "---\n"
+        "# Delete Target\n\n"
+        "Target content.\n",
+        encoding="utf-8",
+    )
+    source_path.write_text(
+        "---\n"
+        "id: delete-source\n"
+        "title: Delete Source\n"
+        "type: permanent\n"
+        "---\n"
+        "# Delete Source\n\n"
+        "Source content.\n\n"
+        "## Links\n"
+        "- reference [[delete-target|Delete Target]]\n",
+        encoding="utf-8",
+    )
+
+    note_repository.rebuild_index()
+    note_repository.delete("delete-target")
+    refreshed = note_repository.get("delete-source")
+    stored_markdown = source_path.read_text(encoding="utf-8")
+
+    assert refreshed is not None
+    assert refreshed.links == []
+    assert "[[delete-target|Delete Target]]" not in stored_markdown
+
+
+def test_rebuild_index_creates_database_backup(note_repository):
+    """Rebuild should back up the SQLite database before clearing tables."""
+    saved = note_repository.create(Note(title="Backup Test", content="Backup content."))
+    db_path = config.get_absolute_path(config.database_path)
+    for backup_path in db_path.parent.glob(f"{db_path.name}.*.bak"):
+        backup_path.unlink()
+
+    note_repository.rebuild_index()
+    backup_paths = list(db_path.parent.glob(f"{db_path.name}.*.bak"))
+
+    assert len(backup_paths) == 1
+    assert backup_paths[0] == note_repository.last_rebuild_backup_path
+    assert backup_paths[0].stat().st_size > 0
+    assert note_repository.get(saved.id) is not None
+
+
 # ---------------------------------------------------------------------------
 # Phase 1 data layer tests
 # ---------------------------------------------------------------------------
@@ -223,8 +466,7 @@ def test_create_leaves_no_tmp_file(note_repository):
     """Atomic write: no .md.tmp file should remain after create()."""
     note = Note(title="Atomic Create", content="Test atomic write.")
     saved = note_repository.create(note)
-    tmp = note_repository.notes_dir / f"{saved.id}.md.tmp"
-    assert not tmp.exists()
+    assert not list(note_repository.notes_dir.glob(f"{saved.id}.md*.tmp"))
 
 
 def test_update_leaves_no_tmp_file(note_repository):
@@ -233,8 +475,28 @@ def test_update_leaves_no_tmp_file(note_repository):
     saved = note_repository.create(note)
     saved.content = "Updated content."
     note_repository.update(saved)
-    tmp = note_repository.notes_dir / f"{saved.id}.md.tmp"
-    assert not tmp.exists()
+    assert not list(note_repository.notes_dir.glob(f"{saved.id}.md*.tmp"))
+
+
+def test_create_retries_transient_replace_failure(note_repository, monkeypatch):
+    """Atomic create should retry once when Windows briefly locks the target file."""
+    note = Note(title="Retry Create", content="Retry around replace().")
+    original_replace = Path.replace
+    calls = {"count": 0}
+
+    def flaky_replace(self: Path, target: Path) -> Path:
+        if self.name.startswith(f"{note.id}.md") and calls["count"] == 0:
+            calls["count"] += 1
+            raise PermissionError(13, "Access is denied")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+
+    saved = note_repository.create(note)
+
+    assert calls["count"] == 1
+    assert note_repository.get(saved.id) is not None
+    assert not list(note_repository.notes_dir.glob(f"{saved.id}.md*.tmp"))
 
 
 def test_cache_hit_after_get(note_repository):

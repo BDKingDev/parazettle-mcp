@@ -7,16 +7,16 @@ Purpose:
 This file is designed to be consumed by AI systems for analysis, review,
 or other automated processes. It solely serves the purpose of background
 information and should NOT under any circumstances leak into the user's
-interaction with the AI when actually USING the Parazettle MCP tools to
+interaction with the AI when actually USING the Parazettel MCP tools to
 process, explore or synthesize user-supplied information.
 
 Content:
 --------
 
-Link Types in Parazettle MCP
+Link Types in Parazettel MCP
 -----------------------------
 
-Parazettle uses a semantic linking system for knowledge relationships and a structural linking system for PARA/GTD hierarchy. Links are directional and most have semantic inverses.
+Parazettel uses a semantic linking system for knowledge relationships and a structural linking system for PARA/GTD hierarchy. Links are directional and most have semantic inverses.
 
 Semantic Link Types (knowledge graph)
 --------------------------------------

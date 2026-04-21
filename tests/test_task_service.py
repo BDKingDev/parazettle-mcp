@@ -4,8 +4,9 @@ import datetime
 
 import pytest
 
-from parazettle_mcp.models.schema import (
+from parazettel_mcp.models.schema import (
     LinkType,
+    Note,
     NoteSource,
     NoteStatus,
     NoteType,
@@ -77,15 +78,115 @@ def test_create_task_autofills_area_from_project(zettel_service, project, area):
     assert task.area_id == area.id
 
 
+def test_create_note_with_project_inherits_area_and_links(zettel_service, project, area):
+    """create_note(project_id=...) inherits area_id and creates a PART_OF link."""
+    note = zettel_service.create_note(
+        title="Project-routed note",
+        content="Supports the project.",
+        project_id=project.id,
+    )
+    assert note.project_id == project.id
+    assert note.area_id == area.id
+    stored_note_links = {lnk.link_type for lnk in zettel_service.get_note(note.id).links}
+    project_links = {lnk.link_type for lnk in zettel_service.get_note(project.id).links}
+    assert LinkType.REFERENCE in stored_note_links
+    assert LinkType.PART_OF in stored_note_links
+    assert LinkType.HAS_PART in project_links
+
+
 def test_create_task_links_to_project(zettel_service, project):
     """create_task(project_id=...) creates a bidirectional PART_OF/HAS_PART link."""
     task = zettel_service.create_task(
         title="Draft roadmap", content="Write the roadmap doc.", project_id=project.id
     )
+    returned_task_links = {lnk.link_type for lnk in task.links}
     task_links = {lnk.link_type for lnk in zettel_service.get_note(task.id).links}
     project_links = {lnk.link_type for lnk in zettel_service.get_note(project.id).links}
+    assert LinkType.REFERENCE in returned_task_links
+    assert LinkType.REFERENCE in task_links
+    assert LinkType.PART_OF in returned_task_links
     assert LinkType.PART_OF in task_links
     assert LinkType.HAS_PART in project_links
+
+
+def test_create_task_avoids_rewriting_child_note(zettel_service, project, monkeypatch):
+    """Task creation should only rewrite the parent note after the initial create."""
+    updated_ids = []
+    original_update = zettel_service.repository.update
+
+    def tracking_update(note):
+        updated_ids.append(note.id)
+        return original_update(note)
+
+    monkeypatch.setattr(zettel_service.repository, "update", tracking_update)
+
+    task = zettel_service.create_task(
+        title="Single-write task", content="Avoid rewriting the child note.", project_id=project.id
+    )
+
+    assert task.id not in updated_ids
+    assert project.id in updated_ids
+
+
+def test_update_task_reassigns_project_and_area(zettel_service, area, project):
+    """update_task(project_id=...) should move the task and inherit the new area."""
+    second_area = zettel_service.create_area_note(
+        title="Personal",
+        content="Personal responsibilities.",
+    )
+    second_project = zettel_service.create_project_note(
+        title="Project B",
+        content="Second project.",
+        area_id=second_area.id,
+    )
+    task = zettel_service.create_task(
+        title="Move me",
+        content="Reassign this task.",
+        project_id=project.id,
+    )
+
+    updated = zettel_service.update_task(task.id, project_id=second_project.id)
+    refreshed = zettel_service.get_note(task.id)
+    old_project_links = {
+        (link.target_id, link.link_type) for link in zettel_service.get_note(project.id).links
+    }
+    new_project_links = {
+        (link.target_id, link.link_type)
+        for link in zettel_service.get_note(second_project.id).links
+    }
+
+    assert updated.project_id == second_project.id
+    assert updated.area_id == second_area.id
+    assert refreshed is not None
+    assert refreshed.project_id == second_project.id
+    assert refreshed.area_id == second_area.id
+    assert (project.id, LinkType.PART_OF) not in {
+        (link.target_id, link.link_type) for link in refreshed.links
+    }
+    assert (second_project.id, LinkType.PART_OF) in {
+        (link.target_id, link.link_type) for link in refreshed.links
+    }
+    assert (task.id, LinkType.HAS_PART) not in old_project_links
+    assert (task.id, LinkType.HAS_PART) in new_project_links
+
+
+def test_update_task_rejects_project_without_area(zettel_service, project):
+    """Task reassignment should fail when the target project cannot resolve an area."""
+    orphan_project = zettel_service.repository.create(
+        Note(
+            title="Orphan Project",
+            content="Missing area.",
+            note_type=NoteType.PROJECT,
+        )
+    )
+    task = zettel_service.create_task(
+        title="Needs a routed project",
+        content=".",
+        project_id=project.id,
+    )
+
+    with pytest.raises(ValueError, match="does not have an area_id"):
+        zettel_service.update_task(task.id, project_id=orphan_project.id)
 
 
 def test_create_task_with_remind_at(zettel_service, project):
@@ -148,6 +249,51 @@ def test_complete_recurring_task_spawns_new(zettel_service, project):
     assert new_task.recurrence_rule == "weekly"
     assert new_task.due_date == today + datetime.timedelta(weeks=1)
     assert new_task.source == NoteSource.RECURRING
+    assert new_task.project_id == project.id
+    assert new_task.area_id == project.area_id
+    assert LinkType.PART_OF in {
+        link.link_type for link in zettel_service.get_note(new_task.id).links
+    }
+
+
+def test_update_task_reassignment_persists_before_recurring_completion(
+    zettel_service, area, project
+):
+    """Recurring completion should spawn the next task under the reassigned project."""
+    second_area = zettel_service.create_area_note(
+        title="Operations",
+        content="Operational work.",
+    )
+    second_project = zettel_service.create_project_note(
+        title="Project C",
+        content="Third project.",
+        area_id=second_area.id,
+    )
+    today = datetime.date.today()
+    task = zettel_service.create_task(
+        title="Recurring reassignment",
+        content="Carry the new routing into the spawned task.",
+        project_id=project.id,
+        due_date=today,
+        recurrence_rule="weekly",
+    )
+
+    updated = zettel_service.update_task(
+        task.id,
+        project_id=second_project.id,
+        priority=2,
+        status=NoteStatus.DONE,
+    )
+    new_tasks = zettel_service.get_tasks(status=NoteStatus.READY, project_id=second_project.id)
+    spawned = next(t for t in new_tasks if t.title == "Recurring reassignment")
+
+    assert updated.project_id == second_project.id
+    assert updated.area_id == second_area.id
+    assert spawned.project_id == second_project.id
+    assert spawned.area_id == second_area.id
+    assert spawned.priority == 2
+    assert spawned.due_date == today + datetime.timedelta(weeks=1)
+    assert spawned.id not in {t.id for t in zettel_service.get_project_tasks(project.id)}
 
 
 # ---------------------------------------------------------------------------
@@ -291,12 +437,21 @@ def test_create_project_note(zettel_service, area):
         outcome="Feature live in production.",
         deadline=datetime.date(2026, 6, 30),
         area_id=area.id,
+        source=NoteSource.TRANSCRIPT,
     )
     assert project.note_type == NoteType.PROJECT
     assert project.metadata.get("outcome") == "Feature live in production."
     assert project.area_id == area.id
+    assert project.source == NoteSource.TRANSCRIPT
     project_links = {lnk.link_type for lnk in zettel_service.get_note(project.id).links}
+    assert LinkType.REFERENCE in project_links
     assert LinkType.PART_OF in project_links
+
+
+def test_create_project_note_requires_area(zettel_service):
+    """create_project_note() rejects projects without an area_id."""
+    with pytest.raises(ValueError, match="area_id required"):
+        zettel_service.create_project_note("Launch feature", "Ship by end of quarter.")
 
 
 def test_get_project_tasks(zettel_service, area):
@@ -313,6 +468,44 @@ def test_get_project_tasks(zettel_service, area):
     done_tasks = zettel_service.get_project_tasks(p.id, status=NoteStatus.DONE)
     assert len(done_tasks) == 1
     assert done_tasks[0].id == t2.id
+
+
+def test_get_project_notes_returns_routed_non_task_notes(zettel_service, area):
+    """Project note retrieval should include routed non-task notes and exclude tasks."""
+    project = zettel_service.create_project_note("Project Notes", ".", area_id=area.id)
+    matching_note = zettel_service.create_note(
+        title="Project Reference",
+        content="Useful project context.",
+        project_id=project.id,
+        source=NoteSource.TRANSCRIPT,
+    )
+    zettel_service.create_task("Project Task", ".", project_id=project.id)
+    other_project = zettel_service.create_project_note("Other Project", ".", area_id=area.id)
+    zettel_service.create_note(
+        title="Other Project Reference",
+        content="Should stay out of the project context.",
+        project_id=other_project.id,
+        source=NoteSource.TRANSCRIPT,
+    )
+
+    notes = zettel_service.get_project_notes(project.id)
+
+    assert [note.id for note in notes] == [matching_note.id]
+
+
+def test_get_linked_projects_returns_part_of_neighbors(zettel_service, area):
+    """Linked-project retrieval should surface project-to-project PART_OF/HAS_PART edges only."""
+    parent = zettel_service.create_project_note("Parent Project", ".", area_id=area.id)
+    child = zettel_service.create_project_note("Child Project", ".", area_id=area.id)
+    sibling = zettel_service.create_project_note("Sibling Project", ".", area_id=area.id)
+    zettel_service.create_link(child.id, parent.id, LinkType.PART_OF, bidirectional=True)
+    zettel_service.create_link(sibling.id, parent.id, LinkType.REFERENCE, bidirectional=True)
+
+    child_links = zettel_service.get_linked_projects(child.id)
+    parent_links = zettel_service.get_linked_projects(parent.id)
+
+    assert [note.id for note in child_links] == [parent.id]
+    assert {note.id for note in parent_links} == {child.id}
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +571,9 @@ def test_update_task_status_done_still_spawns_recurring(zettel_service, project)
     spawned = next(t for t in new_tasks if t.title == "Recurring via update")
     assert spawned.due_date == today + datetime.timedelta(weeks=1)
     assert spawned.priority == 2  # priority carried over from the completed instance
+    assert spawned.project_id == project.id
+    assert spawned.area_id == project.area_id
+    assert spawned.id in {task.id for task in zettel_service.get_project_tasks(project.id)}
 
 
 def test_update_task_appears_in_todays_tasks_after_due_date_set(zettel_service, project):
@@ -403,4 +599,5 @@ def test_create_area_note(zettel_service):
         cadence="weekly review",
     )
     assert area.note_type == NoteType.AREA
+    assert area.area_id == area.id
     assert area.metadata.get("cadence") == "weekly review"

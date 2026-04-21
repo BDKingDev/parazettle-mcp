@@ -3,8 +3,8 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "parazettle-mcp"
-version = "0.3.0"
+name = "parazettel-mcp"
+version = "0.4.0"
 description = "A Zettelkasten + GTD/PARA knowledge and action management MCP server"
 authors = [
     {name = "Peter J. Herrel", email = "peterherrel@protonmail.com"}

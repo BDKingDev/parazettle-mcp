@@ -2,7 +2,7 @@
 
 import pytest
 
-from parazettle_mcp.models.schema import LinkType, NoteType
+from parazettel_mcp.models.schema import LinkType, NoteStatus, NoteType
 
 
 def test_create_note(zettel_service):
@@ -13,14 +13,53 @@ def test_create_note(zettel_service):
         content="Testing note creation through the service.",
         note_type=NoteType.PERMANENT,
         tags=["service", "test"],
+        status=NoteStatus.INBOX,
     )
     # Verify note was created
     assert note.id is not None
     assert note.title == "Service Test Note"
     assert note.content == "Testing note creation through the service."
     assert note.note_type == NoteType.PERMANENT
+    assert note.status == NoteStatus.INBOX
     assert len(note.tags) == 2
     assert {tag.name for tag in note.tags} == {"service", "test"}
+
+
+def test_create_note_with_area_adds_reference_link(zettel_service):
+    """Creating a note with area_id should add a REFERENCE link to that area."""
+    area = zettel_service.create_area_note(
+        title="Knowledge Management",
+        content="Maintain the system.",
+    )
+    note = zettel_service.create_note(
+        title="Area-routed note",
+        content="Supports the area directly.",
+        area_id=area.id,
+    )
+
+    assert note.area_id == area.id
+    stored_links = {lnk.link_type for lnk in zettel_service.get_note(note.id).links}
+    assert LinkType.REFERENCE in stored_links
+
+
+def test_create_area_note_self_assigns_area_without_rewrite(zettel_service, monkeypatch):
+    """Area creation should self-assign area_id before the first persisted write."""
+    updated_ids = []
+    original_update = zettel_service.repository.update
+
+    def tracking_update(note):
+        updated_ids.append(note.id)
+        return original_update(note)
+
+    monkeypatch.setattr(zettel_service.repository, "update", tracking_update)
+
+    area = zettel_service.create_area_note(
+        title="Operations",
+        content="Operational responsibilities.",
+    )
+
+    assert area.area_id == area.id
+    assert area.id not in updated_ids
 
 
 def test_get_note(zettel_service):
@@ -55,6 +94,7 @@ def test_update_note(zettel_service):
         content="Testing note update through the service.",
         note_type=NoteType.PERMANENT,
         tags=["service", "update"],
+        status=NoteStatus.INBOX,
     )
     # Update the note
     updated_note = zettel_service.update_note(
@@ -62,12 +102,65 @@ def test_update_note(zettel_service):
         title="Updated Service Note",
         content="This note has been updated through the service.",
         tags=["service", "updated"],
+        status=NoteStatus.EVERGREEN,
     )
     # Verify note was updated
     assert updated_note.id == note.id
     assert updated_note.title == "Updated Service Note"
     assert "This note has been updated through the service." in updated_note.content
+    assert updated_note.status == NoteStatus.EVERGREEN
     assert {tag.name for tag in updated_note.tags} == {"service", "updated"}
+
+    cleared_note = zettel_service.update_note(note_id=note.id, status=None)
+    assert cleared_note.status is None
+
+
+def test_update_note_title_only_rewrites_heading(zettel_service):
+    """Title-only note updates should rewrite the leading H1 in stored content."""
+    note = zettel_service.create_note(
+        title="Original Service Title",
+        content="Body stays the same.",
+        note_type=NoteType.PERMANENT,
+        tags=["service"],
+    )
+
+    updated_note = zettel_service.update_note(
+        note_id=note.id,
+        title="Renamed Service Title",
+    )
+    retrieved_note = zettel_service.get_note(note.id)
+
+    assert updated_note.title == "Renamed Service Title"
+    assert retrieved_note is not None
+    assert retrieved_note.content.startswith("# Renamed Service Title\n\n")
+    assert "# Original Service Title" not in retrieved_note.content
+
+
+def test_update_note_assigns_project_routing(zettel_service):
+    """Updating a note with project_id should inherit the project area and link it."""
+    area = zettel_service.create_area_note(
+        title="Engineering",
+        content="Software delivery and maintenance.",
+    )
+    project = zettel_service.create_project_note(
+        title="Project A",
+        content="Primary project.",
+        area_id=area.id,
+    )
+    note = zettel_service.create_note(
+        title="Loose support note",
+        content="Needs to be routed under the project.",
+        note_type=NoteType.PERMANENT,
+    )
+
+    updated_note = zettel_service.update_note(note_id=note.id, project_id=project.id)
+
+    assert updated_note.project_id == project.id
+    assert updated_note.area_id == area.id
+    stored_links = {lnk.link_type for lnk in zettel_service.get_note(note.id).links}
+    project_links = {lnk.link_type for lnk in zettel_service.get_note(project.id).links}
+    assert LinkType.PART_OF in stored_links
+    assert LinkType.HAS_PART in project_links
 
 
 def test_delete_note(zettel_service):

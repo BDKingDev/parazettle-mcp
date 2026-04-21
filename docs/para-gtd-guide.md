@@ -1,6 +1,6 @@
 # PARA/GTD Guide
 
-Parazettle extends Zettelkasten with a GTD-inspired action layer using the PARA organisational structure. This guide explains the concepts, the hierarchy, and how to work with tasks, projects, and areas day-to-day.
+Parazettel extends Zettelkasten with a GTD-inspired action layer using the PARA organisational structure. This guide explains the concepts, the hierarchy, and how to work with tasks, projects, and areas day-to-day.
 
 ---
 
@@ -12,7 +12,7 @@ PARA is an organisational system built on four categories:
 
 - **Projects** — active outcomes with a specific end state and deadline
 - **Areas** — ongoing responsibilities with no end date (health, finances, a team you manage)
-- **Resources** — reference material you may want later (handled as knowledge notes in Parazettle)
+- **Resources** — reference material you may want later (handled as knowledge notes in Parazettel)
 - **Archive** — inactive items, marked with `status=archived`
 
 ### GTD (Getting Things Done)
@@ -25,7 +25,7 @@ GTD is a workflow for capturing, clarifying, and acting on commitments:
 - **Reflect** weekly: review open loops, update statuses
 - **Engage** using the today view and context filters
 
-### How they fit together in Parazettle
+### How they fit together in Parazettel
 
 Tasks, projects, and areas are note types in the same graph as your knowledge notes. They share IDs, tags, and semantic links. A project note can link to the research notes that inform it; a task can reference the book note that prompted it.
 
@@ -42,6 +42,7 @@ Area  (ongoing responsibility — no end date)
 - **Areas** are hub-like notes. They serve as entry points to a domain.
 - **Projects** are structure-like notes. They organise tasks and context around a single outcome.
 - **Tasks** must belong to a project. Their `area_id` is auto-filled from the project.
+- **Knowledge notes** should also be routed into the hierarchy. Non-area notes need either an explicit `area_id` or a `project_id`, and project-scoped notes inherit the project's `area_id`.
 
 ---
 
@@ -62,6 +63,7 @@ pzk_create_area
 pzk_create_project
   title: "Run a 5K"
   content: "Train for and complete a 5K race."
+  source: "transcript"
   area_id: <area_id>
   outcome: "Complete a 5K race in under 30 minutes"
   deadline: "2026-06-01"
@@ -81,6 +83,19 @@ pzk_create_task
 ```
 
 The task's `area_id` is automatically set from the project — you don't need to specify it.
+
+### 4. Create knowledge notes routed to the area or project
+
+```text
+pzk_create_note
+  title: "A 5K plan is easier to sustain when runs are pre-scheduled"
+  content: "Planning runs on the calendar reduces decision friction and improves follow-through."
+  note_type: "permanent"
+  source: "transcript"
+  project_id: <project_id>
+```
+
+Non-area notes must include either `area_id` or `project_id`. If you provide `project_id`, the note inherits the project's `area_id` automatically.
 
 ---
 
@@ -227,10 +242,10 @@ pzk_create_task
 When you complete it:
 
 ```text
-pzk_update_task_status task_id=<id> status="done"
+pzk_update_task task_id=<id> status="done"
 ```
 
-A new task is created with `due_date = 2026-04-04` and `status=ready`. The completed task is kept as a record.
+A new task is created with `due_date = 2026-04-04`, `status=ready`, and the same project linkage. If you reassign the task to a different project before marking it done, the spawned task keeps that new project and its inherited `area_id`. The completed task is kept as a record.
 
 ---
 
