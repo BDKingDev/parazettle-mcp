@@ -731,6 +731,130 @@ class TestMcpServer:
             "task001", project_id="project999", priority=3
         )
 
+    def test_get_tasks_tool_formats_results_and_parses_filters(self):
+        """pzk_get_tasks should parse filters and render matching tasks."""
+        ready_task = MagicMock()
+        ready_task.id = "task123"
+        ready_task.title = "Ready task"
+        ready_task.status = NoteStatus.READY
+        ready_task.due_date = datetime.date(2026, 4, 5)
+        ready_task.priority = 3
+        low_task = MagicMock()
+        low_task.id = "task456"
+        low_task.title = "Lower priority task"
+        low_task.status = NoteStatus.READY
+        low_task.due_date = None
+        low_task.priority = None
+        self.mock_zettel_service.get_tasks.return_value = [ready_task, low_task]
+
+        fn = self.registered_tools["pzk_get_tasks"]
+        result = fn(
+            status="ready",
+            project_id="project123",
+            due_date="2026-04-05",
+            priority=3,
+            limit=5,
+        )
+
+        assert "Found 2 task(s)" in result
+        assert "Ready task (ID: task123)" in result
+        assert "Due: 2026-04-05" in result
+        assert "Priority: 3" in result
+        self.mock_zettel_service.get_tasks.assert_called_once_with(
+            status=NoteStatus.READY,
+            project_id="project123",
+            due_date_before=datetime.date(2026, 4, 5),
+            priority=3,
+            limit=5,
+        )
+
+    def test_get_tasks_tool_rejects_invalid_due_date(self):
+        """pzk_get_tasks should reject malformed due_date filters."""
+        fn = self.registered_tools["pzk_get_tasks"]
+
+        result = fn(due_date="not-a-date")
+
+        assert "Invalid due_date" in result
+        self.mock_zettel_service.get_tasks.assert_not_called()
+
+    def test_get_todays_tasks_tool_formats_priorities_and_due_dates(self):
+        """pzk_get_todays_tasks should render task priorities and due dates."""
+        task = MagicMock()
+        task.id = "task123"
+        task.title = "Review inbox"
+        task.status = NoteStatus.ACTIVE
+        task.priority = 4
+        task.due_date = datetime.date(2026, 4, 22)
+        self.mock_zettel_service.get_todays_tasks.return_value = [task]
+
+        fn = self.registered_tools["pzk_get_todays_tasks"]
+        result = fn(include_overdue=False)
+
+        assert "Today's tasks (1)" in result
+        assert "1. [P4] Review inbox — due 2026-04-22 (ID: task123)" in result
+        assert "Status: active" in result
+        self.mock_zettel_service.get_todays_tasks.assert_called_once_with(False)
+
+    def test_get_project_tasks_tool_filters_status_and_limits_results(self):
+        """pzk_get_project_tasks should filter by status and respect the limit."""
+        first_task = MagicMock()
+        first_task.id = "task123"
+        first_task.title = "First task"
+        first_task.status = NoteStatus.READY
+        first_task.due_date = datetime.date(2026, 4, 25)
+        second_task = MagicMock()
+        second_task.id = "task456"
+        second_task.title = "Second task"
+        second_task.status = NoteStatus.READY
+        second_task.due_date = None
+        third_task = MagicMock()
+        third_task.id = "task789"
+        third_task.title = "Third task"
+        third_task.status = NoteStatus.READY
+        third_task.due_date = None
+        self.mock_zettel_service.get_project_tasks.return_value = [
+            first_task,
+            second_task,
+            third_task,
+        ]
+
+        fn = self.registered_tools["pzk_get_project_tasks"]
+        result = fn(project_id="project123", status="ready", limit=2)
+
+        assert "Tasks for project project123 (2):" in result
+        assert "First task (ID: task123)" in result
+        assert "Second task (ID: task456)" in result
+        assert "Third task" not in result
+        self.mock_zettel_service.get_project_tasks.assert_called_once_with(
+            "project123", NoteStatus.READY
+        )
+
+    def test_get_reminders_tool_formats_results(self):
+        """pzk_get_reminders should render note/task reminders with type and date."""
+        reminder = MagicMock()
+        reminder.id = "task123"
+        reminder.title = "Renew domain"
+        reminder.note_type = NoteType.TASK
+        reminder.remind_at = datetime.date(2026, 4, 22)
+        self.mock_zettel_service.get_reminders.return_value = [reminder]
+
+        fn = self.registered_tools["pzk_get_reminders"]
+        result = fn(limit=10)
+
+        assert "Reminders due (1):" in result
+        assert "Renew domain (ID: task123)" in result
+        assert "Type: task  Remind: 2026-04-22" in result
+        self.mock_zettel_service.get_reminders.assert_called_once_with(10)
+
+    def test_get_reminders_tool_handles_empty_results(self):
+        """pzk_get_reminders should return a friendly empty-state message."""
+        self.mock_zettel_service.get_reminders.return_value = []
+
+        fn = self.registered_tools["pzk_get_reminders"]
+        result = fn()
+
+        assert result == "No reminders due today."
+
     def test_get_project_tool_lists_notes_and_linked_projects(self):
         """pzk_get_project should include routed notes and linked projects."""
         mock_project = MagicMock()
@@ -766,6 +890,300 @@ class TestMcpServer:
         assert "Working Notes (ID: note123, type: permanent)" in result
         assert "Linked Projects:" in result
         assert "Parent Project (ID: project999, type: project)" in result
+
+    def test_delete_note_tool_deletes_existing_note(self):
+        """pzk_delete_note removes a note after confirming it exists."""
+        self.mock_zettel_service.get_note.return_value = MagicMock()
+
+        fn = self.registered_tools["pzk_delete_note"]
+        result = fn(note_id="note123")
+
+        assert result == "Note deleted successfully: note123"
+        self.mock_zettel_service.get_note.assert_called_once_with("note123")
+        self.mock_zettel_service.delete_note.assert_called_once_with("note123")
+
+    def test_remove_link_tool_passes_bidirectional_flag(self):
+        """pzk_remove_link forwards the source, target, and bidirectional flag."""
+        self.mock_zettel_service.remove_link.return_value = (MagicMock(), MagicMock())
+
+        fn = self.registered_tools["pzk_remove_link"]
+        result = fn(source_id="source123", target_id="target456", bidirectional=True)
+
+        assert result == "Bidirectional link removed between source123 and target456"
+        self.mock_zettel_service.remove_link.assert_called_once_with(
+            source_id="source123",
+            target_id="target456",
+            bidirectional=True,
+        )
+
+    def test_get_linked_notes_tool_formats_link_details(self):
+        """pzk_get_linked_notes includes outgoing and incoming link metadata."""
+        source_note = MagicMock()
+        outgoing_link = MagicMock()
+        outgoing_link.target_id = "target456"
+        outgoing_link.link_type = LinkType.EXTENDS
+        outgoing_link.description = "Builds on the concept"
+        source_note.links = [outgoing_link]
+
+        linked_note = MagicMock()
+        linked_note.id = "target456"
+        linked_note.title = "Target Note"
+        linked_note.content = "Target note body"
+        linked_note.tags = []
+        incoming_link = MagicMock()
+        incoming_link.target_id = "source123"
+        incoming_link.link_type = LinkType.SUPPORTS
+        incoming_link.description = "Back-reference"
+        linked_note.links = [incoming_link]
+
+        self.mock_zettel_service.get_linked_notes.return_value = [linked_note]
+        self.mock_zettel_service.get_note.return_value = source_note
+
+        fn = self.registered_tools["pzk_get_linked_notes"]
+        result = fn(note_id="source123", direction="both")
+
+        assert "Found 1 both linked notes for source123" in result
+        assert "Target Note (ID: target456)" in result
+        assert "Link type: extends" in result
+        assert "Incoming link type: supports" in result
+        assert "Builds on the concept" in result
+        assert "Back-reference" in result
+
+    def test_get_all_tags_tool_sorts_results_alphabetically(self):
+        """pzk_get_all_tags sorts tags case-insensitively before formatting."""
+        zeta = MagicMock()
+        zeta.name = "zeta"
+        alpha = MagicMock()
+        alpha.name = "Alpha"
+        self.mock_zettel_service.get_all_tags.return_value = [zeta, alpha]
+
+        fn = self.registered_tools["pzk_get_all_tags"]
+        result = fn()
+
+        assert "Found 2 tags" in result
+        assert result.index("1. Alpha") < result.index("2. zeta")
+
+    def test_find_similar_notes_tool_formats_similarity_and_preview(self):
+        """pzk_find_similar_notes renders similarity scores and snippets."""
+        similar = MagicMock()
+        similar.id = "note456"
+        similar.title = "Related Note"
+        similar.content = "This note expands the original idea with more detail."
+        tag = MagicMock()
+        tag.name = "analysis"
+        similar.tags = [tag]
+        self.mock_zettel_service.find_similar_notes.return_value = [(similar, 0.82)]
+
+        fn = self.registered_tools["pzk_find_similar_notes"]
+        result = fn(note_id="note123", threshold=0.5, limit=3)
+
+        assert "Found 1 similar notes for note123" in result
+        assert "Similarity: 0.82" in result
+        assert "Related Note (ID: note456)" in result
+        assert "Tags: analysis" in result
+        self.mock_zettel_service.find_similar_notes.assert_called_once_with(
+            "note123", 0.5
+        )
+
+    def test_find_central_notes_tool_formats_connection_counts(self):
+        """pzk_find_central_notes renders the ranked connection counts."""
+        central = MagicMock()
+        central.id = "note789"
+        central.title = "Hub Note"
+        central.content = "Central note body"
+        tag = MagicMock()
+        tag.name = "hub"
+        central.tags = [tag]
+        self.mock_search_service.find_central_notes.return_value = [(central, 7)]
+
+        fn = self.registered_tools["pzk_find_central_notes"]
+        result = fn(limit=5)
+
+        assert "Central notes in the Zettelkasten" in result
+        assert "Hub Note (ID: note789)" in result
+        assert "Connections: 7" in result
+        self.mock_search_service.find_central_notes.assert_called_once_with(5)
+
+    def test_find_orphaned_notes_tool_formats_preview(self):
+        """pzk_find_orphaned_notes renders each orphan with a content preview."""
+        orphan = MagicMock()
+        orphan.id = "note321"
+        orphan.title = "Isolated Note"
+        orphan.content = "A standalone note with no links to anything else."
+        tag = MagicMock()
+        tag.name = "orphan"
+        orphan.tags = [tag]
+        self.mock_search_service.find_orphaned_notes.return_value = [orphan]
+
+        fn = self.registered_tools["pzk_find_orphaned_notes"]
+        result = fn()
+
+        assert "Found 1 orphaned notes" in result
+        assert "Isolated Note (ID: note321)" in result
+        assert "Tags: orphan" in result
+        assert "A standalone note with no links" in result
+
+    def test_list_notes_by_date_tool_formats_updated_range(self):
+        """pzk_list_notes_by_date parses date bounds and renders updated notes."""
+        note = MagicMock()
+        note.id = "note111"
+        note.title = "Fresh Note"
+        note.content = "Recently updated content."
+        note.updated_at = datetime.datetime(2026, 4, 2, 14, 30)
+        tag = MagicMock()
+        tag.name = "recent"
+        note.tags = [tag]
+        self.mock_search_service.find_notes_by_date_range.return_value = [note]
+
+        fn = self.registered_tools["pzk_list_notes_by_date"]
+        result = fn(
+            start_date="2026-04-01",
+            end_date="2026-04-02",
+            use_updated=True,
+            limit=5,
+        )
+
+        assert "Notes updated between 2026-04-01 and 2026-04-02" in result
+        assert "Fresh Note (ID: note111)" in result
+        assert "Updated: 2026-04-02 14:30" in result
+        self.mock_search_service.find_notes_by_date_range.assert_called_once_with(
+            start_date=datetime.datetime(2026, 4, 1, 0, 0),
+            end_date=datetime.datetime(2026, 4, 2, 23, 59, 59),
+            use_updated=True,
+        )
+
+    def test_rebuild_index_tool_reports_backup_and_count_delta(self):
+        """pzk_rebuild_index includes backup information and note-count changes."""
+        self.mock_zettel_service.get_all_notes.side_effect = [
+            [MagicMock(), MagicMock(), MagicMock()],
+            [MagicMock(), MagicMock()],
+        ]
+        self.mock_zettel_service.rebuild_index.return_value = "backup-2026-04-23.db"
+
+        fn = self.registered_tools["pzk_rebuild_index"]
+        result = fn()
+
+        assert "Database index rebuilt successfully." in result
+        assert "Backup created: backup-2026-04-23.db" in result
+        assert "Notes processed: 2" in result
+        assert "Change in note count: -1" in result
+
+    def test_create_area_tool_passes_cadence_and_tags(self):
+        """pzk_create_area forwards cadence and parsed tag values."""
+        mock_area = MagicMock()
+        mock_area.id = "area123"
+        self.mock_zettel_service.create_area_note.return_value = mock_area
+
+        fn = self.registered_tools["pzk_create_area"]
+        result = fn(
+            title="Household Systems",
+            content="Ongoing home responsibilities.",
+            cadence="weekly review",
+            tags="home, chores",
+        )
+
+        assert result == "Area created successfully with ID: area123"
+        self.mock_zettel_service.create_area_note.assert_called_once_with(
+            title="Household Systems",
+            content="Ongoing home responsibilities.",
+            cadence="weekly review",
+            tags=["home", "chores"],
+        )
+
+    def test_list_projects_tool_filters_done_and_sorts_by_deadline(self):
+        """pzk_list_projects omits done projects by default and sorts by deadline."""
+        later_project = MagicMock()
+        later_project.id = "project-later"
+        later_project.title = "Later Project"
+        later_project.due_date = datetime.date(2026, 5, 1)
+        later_project.status = NoteStatus.ACTIVE
+        later_project.metadata = {"outcome": "Ship later"}
+
+        done_project = MagicMock()
+        done_project.id = "project-done"
+        done_project.title = "Done Project"
+        done_project.due_date = datetime.date(2026, 4, 1)
+        done_project.status = NoteStatus.DONE
+        done_project.metadata = {"outcome": "Already complete"}
+
+        earlier_project = MagicMock()
+        earlier_project.id = "project-early"
+        earlier_project.title = "Earlier Project"
+        earlier_project.due_date = datetime.date(2026, 4, 15)
+        earlier_project.status = NoteStatus.READY
+        earlier_project.metadata = {"outcome": "Ship first"}
+
+        self.mock_zettel_service.search_notes.return_value = [
+            later_project,
+            done_project,
+            earlier_project,
+        ]
+
+        fn = self.registered_tools["pzk_list_projects"]
+        result = fn(include_done=False, limit=5)
+
+        assert "Projects (2)" in result
+        assert "Done Project" not in result
+        assert result.index("Earlier Project") < result.index("Later Project")
+        self.mock_zettel_service.search_notes.assert_called_once_with(
+            note_type=NoteType.PROJECT
+        )
+
+    def test_list_areas_tool_formats_cadence(self):
+        """pzk_list_areas renders each area's cadence metadata."""
+        area = MagicMock()
+        area.id = "area123"
+        area.title = "Family"
+        area.metadata = {"cadence": "monthly check-in"}
+        self.mock_zettel_service.search_notes.return_value = [area]
+
+        fn = self.registered_tools["pzk_list_areas"]
+        result = fn(limit=10)
+
+        assert "Areas (1)" in result
+        assert "Family (ID: area123)" in result
+        assert "Cadence: monthly check-in" in result
+        self.mock_zettel_service.search_notes.assert_called_once_with(
+            note_type=NoteType.AREA
+        )
+
+    def test_get_area_tool_lists_projects_and_open_task_counts(self):
+        """pzk_get_area summarizes linked projects and their task counts."""
+        area = MagicMock()
+        area.id = "area123"
+        area.note_type = NoteType.AREA
+        area.metadata = {"cadence": "weekly review"}
+        area.content = "# Area\n\nArea body"
+
+        project_one = MagicMock()
+        project_one.id = "project1"
+        project_one.title = "Budgeting"
+
+        project_two = MagicMock()
+        project_two.id = "project2"
+        project_two.title = "Planning"
+
+        self.mock_zettel_service.get_note.return_value = area
+        self.mock_zettel_service.search_notes.return_value = [project_one, project_two]
+        self.mock_zettel_service.get_project_tasks.side_effect = [
+            [MagicMock(), MagicMock()],
+            [MagicMock()],
+        ]
+
+        fn = self.registered_tools["pzk_get_area"]
+        result = fn(area_id="area123")
+
+        assert "ID: area123" in result
+        assert "Cadence: weekly review" in result
+        assert "Projects: 2" in result
+        assert "Budgeting (ID: project1)" in result
+        assert "Planning (ID: project2)" in result
+        assert "2 task(s)" in result
+        assert "1 task(s)" in result
+        self.mock_zettel_service.search_notes.assert_called_once_with(
+            note_type=NoteType.PROJECT,
+            area_id="area123",
+        )
 
     def test_update_task_status_tool_removed(self):
         """pzk_update_task_status should no longer be registered; use pzk_update_task instead."""

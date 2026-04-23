@@ -1,6 +1,8 @@
 # tests/test_search_service.py
 """Tests for the search service in the Zettelkasten MCP server."""
 import datetime
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -17,6 +19,15 @@ from parazettel_mcp.services.search_service import SearchResult, SearchService
 
 class TestSearchService:
     """Tests for the SearchService class."""
+
+    def test_initialize_calls_underlying_zettel_service(self):
+        """initialize() should delegate to the wrapped zettel service."""
+        mock_zettel_service = MagicMock()
+
+        search_service = SearchService(mock_zettel_service)
+        search_service.initialize()
+
+        mock_zettel_service.initialize.assert_called_once_with()
 
     def test_search_by_text(self, zettel_service):
         """Test searching for notes by text content."""
@@ -47,6 +58,39 @@ class TestSearchService:
         assert note1.id in python_ids
         assert note2.id in python_ids
 
+    def test_search_by_text_returns_empty_for_blank_query(self):
+        """search_by_text() should short-circuit blank queries."""
+        mock_zettel_service = MagicMock()
+        search_service = SearchService(mock_zettel_service)
+
+        assert search_service.search_by_text("") == []
+        mock_zettel_service.get_all_notes.assert_not_called()
+
+    def test_search_by_text_respects_title_and_content_flags(self):
+        """search_by_text() should honor include_title/include_content toggles."""
+        title_match = SimpleNamespace(
+            id="title-note",
+            title="Python title match",
+            content="Body text without the keyword.",
+        )
+        content_match = SimpleNamespace(
+            id="content-note",
+            title="Body-only match",
+            content="The keyword python appears in this body text.",
+        )
+        mock_zettel_service = MagicMock()
+        mock_zettel_service.get_all_notes.return_value = [title_match, content_match]
+        search_service = SearchService(mock_zettel_service)
+
+        title_results = search_service.search_by_text("python", include_content=False)
+        assert [result.note.id for result in title_results] == ["title-note"]
+        assert title_results[0].matched_context == "Title: Python title match"
+
+        content_results = search_service.search_by_text("python", include_title=False)
+        assert [result.note.id for result in content_results] == ["content-note"]
+        assert content_results[0].matched_context.startswith("Content: ...")
+        assert "python appears" in content_results[0].matched_context.lower()
+
     def test_search_by_tag(self, zettel_service):
         """Test searching for notes by tags."""
         # Create test notes
@@ -75,6 +119,21 @@ class TestSearchService:
         programming_ids = {note.id for note in programming_notes}
         assert note1.id in programming_ids
         assert note2.id in programming_ids
+
+    def test_search_by_tag_deduplicates_multi_tag_results(self):
+        """search_by_tag() should deduplicate notes returned for multiple tags."""
+        shared_note = SimpleNamespace(id="shared")
+        unique_note = SimpleNamespace(id="unique")
+        mock_zettel_service = MagicMock()
+        mock_zettel_service.get_notes_by_tag.side_effect = [
+            [shared_note, unique_note],
+            [shared_note],
+        ]
+        search_service = SearchService(mock_zettel_service)
+
+        results = search_service.search_by_tag(["python", "research"])
+
+        assert {note.id for note in results} == {"shared", "unique"}
 
     def test_search_by_link(self, zettel_service):
         """Test searching for notes by links."""
@@ -196,6 +255,30 @@ class TestSearchService:
         assert len(found_notes) == 1
         assert found_notes[0].id == note.id
 
+    def test_find_notes_by_date_range_uses_updated_timestamp(self):
+        """find_notes_by_date_range() should filter on updated_at when requested."""
+        in_range = SimpleNamespace(
+            id="updated-note",
+            created_at=datetime.datetime(2026, 4, 1, 8, 0, 0),
+            updated_at=datetime.datetime(2026, 4, 10, 9, 0, 0),
+        )
+        out_of_range = SimpleNamespace(
+            id="old-note",
+            created_at=datetime.datetime(2026, 4, 1, 8, 0, 0),
+            updated_at=datetime.datetime(2026, 3, 25, 9, 0, 0),
+        )
+        mock_zettel_service = MagicMock()
+        mock_zettel_service.get_all_notes.return_value = [out_of_range, in_range]
+        search_service = SearchService(mock_zettel_service)
+
+        results = search_service.find_notes_by_date_range(
+            start_date=datetime.datetime(2026, 4, 1, 0, 0, 0),
+            end_date=datetime.datetime(2026, 4, 30, 23, 59, 59),
+            use_updated=True,
+        )
+
+        assert [note.id for note in results] == ["updated-note"]
+
     def test_find_similar_notes(self, zettel_service):
         """Test finding notes similar to a given note."""
         # Create test notes with shared tags
@@ -269,6 +352,41 @@ class TestSearchService:
 
         assert len(results) == 1
         assert results[0].note.id == matching_task.id
+
+    def test_search_combined_without_text_returns_default_scored_results(self):
+        """search_combined() should wrap filtered notes even when no text query is given."""
+        note1 = SimpleNamespace(id="note-1", title="One", content="First")
+        note2 = SimpleNamespace(id="note-2", title="Two", content="Second")
+        mock_repository = MagicMock()
+        mock_repository.search.return_value = [note1, note2]
+        mock_zettel_service = MagicMock()
+        mock_zettel_service.repository = mock_repository
+        search_service = SearchService(mock_zettel_service)
+        start_date = datetime.datetime(2026, 4, 1, 0, 0, 0)
+        end_date = datetime.datetime(2026, 4, 30, 0, 0, 0)
+
+        results = search_service.search_combined(
+            tags=["python"],
+            note_type=NoteType.PERMANENT,
+            status=NoteStatus.INBOX,
+            project_id="project123",
+            area_id="area456",
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        assert [result.note.id for result in results] == ["note-1", "note-2"]
+        assert all(result.score == 1.0 for result in results)
+        assert all(result.matched_terms == set() for result in results)
+        mock_repository.search.assert_called_once_with(
+            tags=["python"],
+            note_type=NoteType.PERMANENT,
+            status=NoteStatus.INBOX,
+            project_id="project123",
+            area_id="area456",
+            created_after=start_date,
+            created_before=end_date,
+        )
 
     def test_search_combined_filters_non_task_notes_by_project(self, zettel_service):
         """Combined search should honor project_id for non-task notes as well."""
