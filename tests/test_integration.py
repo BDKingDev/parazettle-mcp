@@ -1,8 +1,11 @@
 # tests/test_integration.py
 """Integration tests for the Zettelkasten MCP system."""
-import os
-import tempfile
+import datetime
+import re
+import shutil
 from pathlib import Path
+from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 
@@ -16,16 +19,27 @@ from parazettel_mcp.services.zettel_service import ZettelService
 class TestIntegration:
     """Integration tests for the entire Zettelkasten MCP system."""
 
+    @staticmethod
+    def _extract_id(message: str) -> str:
+        """Extract a created note/task ID from an MCP success message."""
+        match = re.search(r"ID: ([^\)\s]+)", message)
+        assert match, f"Could not extract an ID from: {message}"
+        return match.group(1)
+
     @pytest.fixture(autouse=True)
     def setup_test_environment(self):
         """Set up test environment using temporary directories."""
-        # Create temporary directories for test
-        self.temp_notes_dir = tempfile.TemporaryDirectory()
-        self.temp_db_dir = tempfile.TemporaryDirectory()
+        workspace_tmp_root = Path(__file__).resolve().parents[1] / ".tmp" / "test-integration"
+        workspace_tmp_root.mkdir(parents=True, exist_ok=True)
 
-        # Configure paths
-        self.notes_dir = Path(self.temp_notes_dir.name)
-        self.database_path = Path(self.temp_db_dir.name) / "test_zettelkasten.db"
+        # Create explicit workspace-local directories so SQLite runs on a path
+        # that remains writable throughout the test on Windows.
+        self.test_root = workspace_tmp_root / uuid4().hex
+        self.notes_dir = self.test_root / "notes"
+        self.db_dir = self.test_root / "db"
+        self.notes_dir.mkdir(parents=True, exist_ok=True)
+        self.db_dir.mkdir(parents=True, exist_ok=True)
+        self.database_path = self.db_dir / "test_zettelkasten.db"
 
         # Save original config values
         self.original_notes_dir = config.notes_dir
@@ -40,8 +54,21 @@ class TestIntegration:
         self.zettel_service.initialize()
         self.search_service = SearchService(self.zettel_service)
 
-        # Create server
-        self.server = ZettelkastenMcpServer()
+        # Create a real server while capturing the registered MCP tool functions
+        self.registered_tools = {}
+
+        def mock_tool_decorator(*args, **kwargs):
+            def tool_wrapper(func):
+                self.registered_tools[kwargs.get("name")] = func
+                return func
+
+            return tool_wrapper
+
+        mock_mcp = type("MockMCP", (), {})()
+        mock_mcp.tool = mock_tool_decorator
+
+        with patch("parazettel_mcp.server.mcp_server.FastMCP", return_value=mock_mcp):
+            self.server = ZettelkastenMcpServer()
 
         yield
 
@@ -60,9 +87,8 @@ class TestIntegration:
                 engine.dispose()
                 disposed.add(id(engine))
 
-        # Clean up temp directories
-        self.temp_notes_dir.cleanup()
-        self.temp_db_dir.cleanup()
+        # Clean up test directories
+        shutil.rmtree(self.test_root, ignore_errors=True)
 
     def test_create_note_flow(self):
         """Test the complete flow of creating and retrieving a note."""
@@ -196,6 +222,77 @@ class TestIntegration:
         # Verify links by tag
         kg_notes = self.zettel_service.get_notes_by_tag("knowledge-graph")
         assert len(kg_notes) == 4  # Should find all 4 notes
+
+    def test_para_hierarchy_today_view_flow_via_mcp_tools(self):
+        """Exercise the area -> project -> task -> today view flow via MCP tools."""
+        today = datetime.date.today()
+        overdue = today - datetime.timedelta(days=1)
+
+        create_area = self.registered_tools["pzk_create_area"]
+        create_project = self.registered_tools["pzk_create_project"]
+        create_task = self.registered_tools["pzk_create_task"]
+        get_note = self.registered_tools["pzk_get_note"]
+        get_todays_tasks = self.registered_tools["pzk_get_todays_tasks"]
+
+        area_result = create_area(
+            title="Personal Projects",
+            content="Personal software and creative projects.",
+            cadence="weekly review",
+        )
+        area_id = self._extract_id(area_result)
+
+        project_result = create_project(
+            title="Parazettel MCP",
+            content="Build and ship the parazettel fork with PARA/GTD support.",
+            source="transcript",
+            area_id=area_id,
+            outcome="Working MCP server with full GTD workflow support",
+            deadline=(today + datetime.timedelta(days=30)).isoformat(),
+        )
+        project_id = self._extract_id(project_result)
+
+        task_result = create_task(
+            title="Write integration tests",
+            content="Cover the full area -> project -> task -> today view flow.",
+            project_id=project_id,
+            status="active",
+            due_date=today.isoformat(),
+            priority=3,
+            remind_at=today.isoformat(),
+            estimated_minutes=90,
+            context="computer",
+            energy_level="high",
+        )
+        task_id = self._extract_id(task_result)
+
+        overdue_result = create_task(
+            title="Overdue task",
+            content="Past due.",
+            project_id=project_id,
+            status="active",
+            due_date=overdue.isoformat(),
+            priority=4,
+        )
+        overdue_task_id = self._extract_id(overdue_result)
+
+        task_details = get_note(identifier=task_id)
+        assert f"Project ID: {project_id}" in task_details
+        assert "@computer" in task_details
+        assert "high-energy" in task_details
+
+        todays_tasks = get_todays_tasks(include_overdue=True)
+        assert "Today's tasks (2)" in todays_tasks
+        assert (
+            f"[P4] Overdue task — due {overdue.isoformat()} (ID: {overdue_task_id})"
+            in todays_tasks
+        )
+        assert (
+            f"[P3] Write integration tests — due {today.isoformat()} (ID: {task_id})"
+            in todays_tasks
+        )
+        assert todays_tasks.index("Overdue task") < todays_tasks.index(
+            "Write integration tests"
+        )
 
     def test_rebuild_index_flow(self):
         """Test the rebuild index functionality with direct file modifications."""
