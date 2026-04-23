@@ -731,6 +731,130 @@ class TestMcpServer:
             "task001", project_id="project999", priority=3
         )
 
+    def test_get_tasks_tool_formats_results_and_parses_filters(self):
+        """pzk_get_tasks should parse filters and render matching tasks."""
+        ready_task = MagicMock()
+        ready_task.id = "task123"
+        ready_task.title = "Ready task"
+        ready_task.status = NoteStatus.READY
+        ready_task.due_date = datetime.date(2026, 4, 5)
+        ready_task.priority = 3
+        low_task = MagicMock()
+        low_task.id = "task456"
+        low_task.title = "Lower priority task"
+        low_task.status = NoteStatus.READY
+        low_task.due_date = None
+        low_task.priority = None
+        self.mock_zettel_service.get_tasks.return_value = [ready_task, low_task]
+
+        fn = self.registered_tools["pzk_get_tasks"]
+        result = fn(
+            status="ready",
+            project_id="project123",
+            due_date="2026-04-05",
+            priority=3,
+            limit=5,
+        )
+
+        assert "Found 2 task(s)" in result
+        assert "Ready task (ID: task123)" in result
+        assert "Due: 2026-04-05" in result
+        assert "Priority: 3" in result
+        self.mock_zettel_service.get_tasks.assert_called_once_with(
+            status=NoteStatus.READY,
+            project_id="project123",
+            due_date_before=datetime.date(2026, 4, 5),
+            priority=3,
+            limit=5,
+        )
+
+    def test_get_tasks_tool_rejects_invalid_due_date(self):
+        """pzk_get_tasks should reject malformed due_date filters."""
+        fn = self.registered_tools["pzk_get_tasks"]
+
+        result = fn(due_date="not-a-date")
+
+        assert "Invalid due_date" in result
+        self.mock_zettel_service.get_tasks.assert_not_called()
+
+    def test_get_todays_tasks_tool_formats_priorities_and_due_dates(self):
+        """pzk_get_todays_tasks should render task priorities and due dates."""
+        task = MagicMock()
+        task.id = "task123"
+        task.title = "Review inbox"
+        task.status = NoteStatus.ACTIVE
+        task.priority = 4
+        task.due_date = datetime.date(2026, 4, 22)
+        self.mock_zettel_service.get_todays_tasks.return_value = [task]
+
+        fn = self.registered_tools["pzk_get_todays_tasks"]
+        result = fn(include_overdue=False)
+
+        assert "Today's tasks (1)" in result
+        assert "1. [P4] Review inbox — due 2026-04-22 (ID: task123)" in result
+        assert "Status: active" in result
+        self.mock_zettel_service.get_todays_tasks.assert_called_once_with(False)
+
+    def test_get_project_tasks_tool_filters_status_and_limits_results(self):
+        """pzk_get_project_tasks should filter by status and respect the limit."""
+        first_task = MagicMock()
+        first_task.id = "task123"
+        first_task.title = "First task"
+        first_task.status = NoteStatus.READY
+        first_task.due_date = datetime.date(2026, 4, 25)
+        second_task = MagicMock()
+        second_task.id = "task456"
+        second_task.title = "Second task"
+        second_task.status = NoteStatus.READY
+        second_task.due_date = None
+        third_task = MagicMock()
+        third_task.id = "task789"
+        third_task.title = "Third task"
+        third_task.status = NoteStatus.READY
+        third_task.due_date = None
+        self.mock_zettel_service.get_project_tasks.return_value = [
+            first_task,
+            second_task,
+            third_task,
+        ]
+
+        fn = self.registered_tools["pzk_get_project_tasks"]
+        result = fn(project_id="project123", status="ready", limit=2)
+
+        assert "Tasks for project project123 (2):" in result
+        assert "First task (ID: task123)" in result
+        assert "Second task (ID: task456)" in result
+        assert "Third task" not in result
+        self.mock_zettel_service.get_project_tasks.assert_called_once_with(
+            "project123", NoteStatus.READY
+        )
+
+    def test_get_reminders_tool_formats_results(self):
+        """pzk_get_reminders should render note/task reminders with type and date."""
+        reminder = MagicMock()
+        reminder.id = "task123"
+        reminder.title = "Renew domain"
+        reminder.note_type = NoteType.TASK
+        reminder.remind_at = datetime.date(2026, 4, 22)
+        self.mock_zettel_service.get_reminders.return_value = [reminder]
+
+        fn = self.registered_tools["pzk_get_reminders"]
+        result = fn(limit=10)
+
+        assert "Reminders due (1):" in result
+        assert "Renew domain (ID: task123)" in result
+        assert "Type: task  Remind: 2026-04-22" in result
+        self.mock_zettel_service.get_reminders.assert_called_once_with(10)
+
+    def test_get_reminders_tool_handles_empty_results(self):
+        """pzk_get_reminders should return a friendly empty-state message."""
+        self.mock_zettel_service.get_reminders.return_value = []
+
+        fn = self.registered_tools["pzk_get_reminders"]
+        result = fn()
+
+        assert result == "No reminders due today."
+
     def test_get_project_tool_lists_notes_and_linked_projects(self):
         """pzk_get_project should include routed notes and linked projects."""
         mock_project = MagicMock()
