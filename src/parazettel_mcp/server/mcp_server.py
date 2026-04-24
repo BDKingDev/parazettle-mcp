@@ -1153,17 +1153,19 @@ class ZettelkastenMcpServer:
             title: str,
             content: str,
             source: str,
-            area_id: str,
+            area_id: Optional[str] = None,
+            project_id: Optional[str] = None,
             outcome: Optional[str] = None,
             deadline: Optional[str] = None,
             tags: Optional[str] = None,
         ) -> str:
-            """Create a project note linked to an area.
+            """Create a project note linked to an area or parent project.
             Args:
                 title: Project title
                 content: Project description
                 source: Origin of the project note
-                area_id: ID of the area this project belongs to (required)
+                area_id: ID of the area this project belongs to
+                project_id: Optional parent project ID for subprojects
                 outcome: The desired outcome/goal
                 deadline: Target completion date (YYYY-MM-DD)
                 tags: Comma-separated tags
@@ -1178,9 +1180,27 @@ class ZettelkastenMcpServer:
                         f"Invalid source: {source}. "
                         f"Valid: {', '.join(s.value for s in NoteSource)}"
                     )
-                area = self.zettel_service.get_note(area_id)
+                resolved_area_id = area_id
+                if project_id:
+                    parent_project = self.zettel_service.get_note(project_id)
+                    if not parent_project or parent_project.note_type != NoteType.PROJECT:
+                        return f"project_id {project_id} is not a valid project note."
+                    if not parent_project.area_id:
+                        return f"project_id {project_id} does not have an area_id."
+                    if (
+                        resolved_area_id
+                        and resolved_area_id != parent_project.area_id
+                    ):
+                        return (
+                            f"area_id {resolved_area_id} does not match project "
+                            f"{project_id} area_id {parent_project.area_id}"
+                        )
+                    resolved_area_id = parent_project.area_id
+                elif not resolved_area_id:
+                    return "area_id is required for top-level projects."
+                area = self.zettel_service.get_note(resolved_area_id)
                 if not area or area.note_type != NoteType.AREA:
-                    return f"area_id {area_id} is not a valid area note."
+                    return f"area_id {resolved_area_id} is not a valid area note."
                 parsed_deadline = None
                 if deadline:
                     try:
@@ -1195,7 +1215,8 @@ class ZettelkastenMcpServer:
                     content=content,
                     outcome=outcome,
                     deadline=parsed_deadline,
-                    area_id=area_id,
+                    area_id=resolved_area_id,
+                    project_id=project_id,
                     tags=tag_list,
                     source=note_source,
                 )
@@ -1203,9 +1224,73 @@ class ZettelkastenMcpServer:
             except Exception as e:
                 return self.format_error_response(e)
 
+        @self.mcp.tool(name="pzk_create_subproject")
+        def pzk_create_subproject(
+            parent_project_id: str,
+            title: str,
+            content: str,
+            source: str,
+            outcome: Optional[str] = None,
+            deadline: Optional[str] = None,
+            tags: Optional[str] = None,
+        ) -> str:
+            """Create a subproject under an existing parent project.
+            Args:
+                parent_project_id: ID of the parent project
+                title: Subproject title
+                content: Subproject description
+                source: Origin of the subproject note
+                outcome: The desired outcome/goal
+                deadline: Target completion date (YYYY-MM-DD)
+                tags: Comma-separated tags
+            """
+            try:
+                import datetime as _dt
+
+                try:
+                    note_source = NoteSource(source.lower())
+                except ValueError:
+                    return (
+                        f"Invalid source: {source}. "
+                        f"Valid: {', '.join(s.value for s in NoteSource)}"
+                    )
+                parent_project = self.zettel_service.get_note(parent_project_id)
+                if not parent_project or parent_project.note_type != NoteType.PROJECT:
+                    return (
+                        f"parent_project_id {parent_project_id} "
+                        "is not a valid project note."
+                    )
+                if not parent_project.area_id:
+                    return (
+                        f"parent_project_id {parent_project_id} "
+                        "does not have an area_id."
+                    )
+                parsed_deadline = None
+                if deadline:
+                    try:
+                        parsed_deadline = _dt.date.fromisoformat(deadline)
+                    except ValueError:
+                        return f"Invalid deadline: {deadline}. Use YYYY-MM-DD."
+                tag_list = (
+                    [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+                )
+                project = self.zettel_service.create_project_note(
+                    title=title,
+                    content=content,
+                    outcome=outcome,
+                    deadline=parsed_deadline,
+                    area_id=parent_project.area_id,
+                    project_id=parent_project_id,
+                    tags=tag_list,
+                    source=note_source,
+                )
+                return f"Subproject created successfully with ID: {project.id}"
+            except Exception as e:
+                return self.format_error_response(e)
+
         @self.mcp.tool(name="pzk_get_project")
         def pzk_get_project(project_id: str) -> str:
-            """Get a project note with task, note, and linked-project context.
+            """Get a project note with task, note, and subproject context.
             Args:
                 project_id: ID of the project note
             """
@@ -1217,7 +1302,8 @@ class ZettelkastenMcpServer:
                     return f"Note {project_id} is not a project (type: {project.note_type.value})"
                 tasks = self.zettel_service.get_project_tasks(project_id)
                 project_notes = self.zettel_service.get_project_notes(project_id)
-                linked_projects = self.zettel_service.get_linked_projects(project_id)
+                parent_project = self.zettel_service.get_parent_project(project_id)
+                subprojects = self.zettel_service.get_subprojects(project_id)
                 preview_tasks = self._get_project_preview_tasks(tasks)
                 counts: dict = {}
                 for t in tasks:
@@ -1238,21 +1324,21 @@ class ZettelkastenMcpServer:
                         out += self._format_project_preview_task(task) + "\n"
                 else:
                     out += "- None\n"
+                if parent_project:
+                    out += "\nParent Project:\n"
+                    out += f"- {parent_project.title} (ID: {parent_project.id})\n"
+                out += "\nSubprojects:\n"
+                if subprojects:
+                    for subproject in subprojects:
+                        out += f"- {subproject.title} (ID: {subproject.id})\n"
+                else:
+                    out += "- None\n"
                 out += "\nNotes:\n"
                 if project_notes:
                     for note in project_notes:
                         out += (
                             f"- {note.title} (ID: {note.id}, type: "
                             f"{note.note_type.value})\n"
-                        )
-                else:
-                    out += "- None\n"
-                out += "\nLinked Projects:\n"
-                if linked_projects:
-                    for linked_project in linked_projects:
-                        out += (
-                            f"- {linked_project.title} (ID: {linked_project.id}, type: "
-                            f"{linked_project.note_type.value})\n"
                         )
                 else:
                     out += "- None\n"
