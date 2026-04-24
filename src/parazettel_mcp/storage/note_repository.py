@@ -748,7 +748,19 @@ class NoteRepository(Repository[Note]):
             # Reconstruct Notes from DB rows — avoids N file reads
             return [self._note_from_db(db_note) for db_note in db_notes]
 
-    def update(
+    def update(self, note: Note) -> Note:
+        """Update a note."""
+        return self._update_note(note)
+
+    def update_preserving_updated_at(
+        self, note: Note, *, existing_note: Note
+    ) -> Note:
+        """Rewrite derived markdown while keeping the note's original timestamp."""
+        return self._update_note(
+            note, preserve_updated_at=True, existing_note=existing_note
+        )
+
+    def _update_note(
         self,
         note: Note,
         *,
@@ -871,10 +883,8 @@ class NoteRepository(Repository[Note]):
                 continue
             existing_source = file_backed_source.model_copy(deep=True)
             file_backed_source.remove_link(id)
-            self.update(
-                file_backed_source,
-                preserve_updated_at=True,
-                existing_note=existing_source,
+            self.update_preserving_updated_at(
+                file_backed_source, existing_note=existing_source
             )
 
         # Delete from database
