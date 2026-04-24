@@ -97,6 +97,8 @@ All tools are prefixed `pzk_`.
 | --- | --- |
 | `pzk_create_note` | Create a note with title, content, source, and required area/project routing for non-area notes |
 | `pzk_get_note` | Retrieve a note by ID or title |
+| `pzk_get_notes` | Retrieve multiple notes by ID or title in one call |
+| `pzk_get_notes_by_tag` | Retrieve multiple notes with an exact tag match in one call |
 | `pzk_update_note` | Update content, type, tags, and project/area routing |
 | `pzk_delete_note` | Delete a note |
 | `pzk_create_link` | Create a typed link between notes |

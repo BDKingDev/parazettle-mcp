@@ -240,6 +240,81 @@ Cover the full area → project → task → today view flow.
 
 ---
 
+### `pzk_get_notes`
+
+Retrieves multiple notes by ID or title in one call. This is the batch companion to `pzk_get_note` when an agent needs several note bodies as working context.
+
+**Call:**
+
+```json
+{
+  "identifiers": ["{TASK_ID}", "{PROJECT_ID}"]
+}
+```
+
+**Expected output:**
+
+```
+Notes retrieved (2/2):
+
+ID: {TASK_ID}
+Type: task
+Created: 2026-03-26T...
+Updated: 2026-03-26T...
+Project ID: {PROJECT_ID}
+Area ID: {AREA_ID}
+
+# Write integration tests
+
+Cover the full area → project → task → today view flow.
+
+---
+
+ID: {PROJECT_ID}
+Type: project
+Created: 2026-03-26T...
+Updated: 2026-03-26T...
+Area ID: {AREA_ID}
+
+# Parazettel MCP
+
+Build and ship the parazettel fork with PARA/GTD support.
+```
+
+---
+
+### `pzk_get_notes_by_tag`
+
+Retrieves multiple notes with an exact tag match and returns full note bodies. Use this when you know the tag you want and need more than the preview-style output from `pzk_search_notes`.
+
+**Call:**
+
+```json
+{
+  "tag": "zettelkasten",
+  "limit": 10
+}
+```
+
+**Expected output:**
+
+```
+Notes tagged 'zettelkasten' (1):
+
+ID: {NOTE_ID}
+Type: permanent
+Created: 2026-03-26T...
+Updated: 2026-03-26T...
+Project ID: {PROJECT_ID}
+Area ID: {AREA_ID}
+
+# Atomic notes are the foundation of Zettelkasten
+
+Each note contains exactly one idea.
+```
+
+---
+
 ### `pzk_get_tasks`
 
 Queries tasks with optional filters.
@@ -679,6 +754,7 @@ Returns only task-type notes.
 ```
 
 Returns notes tagged with `zettelkasten`.
+Use `pzk_get_notes_by_tag` instead when you want full note bodies rather than search previews.
 
 **Call (combined filters):**
 
