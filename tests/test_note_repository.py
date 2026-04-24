@@ -3,8 +3,10 @@
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 
 from parazettel_mcp.config import config
+from parazettel_mcp.models.db_models import DBLink
 from parazettel_mcp.models.schema import LinkType, Note, NoteStatus, NoteType, Tag
 from parazettel_mcp.storage.note_repository import _coerce_datetime, _normalize_wiki_target
 
@@ -320,6 +322,26 @@ def test_get_normalizes_piped_wiki_link_targets(note_repository):
     assert all("|" not in link.target_id for link in source.links)
 
 
+def test_update_adds_title_aliases_to_non_aliased_links(note_repository):
+    """Touched notes should rewrite wiki-links with the target note title as alias."""
+    target = Note(title="Alias Target", content="Target content.")
+    source = Note(title="Alias Source", content="Source content.")
+    saved_target = note_repository.create(target)
+    saved_source = note_repository.create(source)
+
+    saved_source.add_link(saved_target.id, LinkType.REFERENCE, "Existing description")
+    note_repository.update(saved_source)
+
+    stored_markdown = (
+        note_repository.notes_dir / f"{saved_source.id}.md"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        f"- reference [[{saved_target.id}|Alias Target]] Existing description"
+        in stored_markdown
+    )
+
+
 def test_coerce_datetime_handles_yaml_parsed_dates():
     """YAML may parse unquoted timestamp frontmatter before repository parsing."""
     import datetime
@@ -430,6 +452,171 @@ def test_delete_cleans_aliased_source_links(note_repository):
     assert refreshed is not None
     assert refreshed.links == []
     assert "[[delete-target|Delete Target]]" not in stored_markdown
+
+
+def test_note_to_markdown_uses_bulk_title_lookup_for_aliases(
+    note_repository, monkeypatch
+):
+    """Alias rendering should not re-read each linked note from disk."""
+    source = note_repository.create(
+        Note(title="Bulk Lookup Source", content="Source content.")
+    )
+    target = note_repository.create(
+        Note(title="Bulk Lookup Target", content="Target content.")
+    )
+
+    source.add_link(target.id, LinkType.REFERENCE)
+    source = note_repository.update(source)
+
+    def unexpected_get(_note_id):
+        raise AssertionError("alias rendering should not call NoteRepository.get()")
+
+    monkeypatch.setattr(note_repository, "get", unexpected_get)
+
+    markdown = note_repository._note_to_markdown(source)
+
+    assert f"[[{target.id}|Bulk Lookup Target]]" in markdown
+
+
+def test_update_falls_back_to_plain_link_for_unsafe_alias_titles(note_repository):
+    """Unsafe titles should fall back to plain wiki-links instead of invalid aliases."""
+    source = note_repository.create(
+        Note(title="Unsafe Alias Source", content="Source content.")
+    )
+    target = note_repository.create(
+        Note(title="Unsafe | Alias", content="Target content.")
+    )
+
+    source.add_link(target.id, LinkType.REFERENCE)
+    note_repository.update(source)
+    stored_markdown = (
+        note_repository.notes_dir / f"{source.id}.md"
+    ).read_text(encoding="utf-8")
+
+    assert f"[[{target.id}]]" in stored_markdown
+    assert f"[[{target.id}|Unsafe | Alias]]" not in stored_markdown
+
+
+def test_delete_preserves_aliases_for_remaining_links(note_repository):
+    """Deleting one target should not strip aliases from other remaining links."""
+    first_target = note_repository.notes_dir / "delete-first-target.md"
+    second_target = note_repository.notes_dir / "delete-second-target.md"
+    source_path = note_repository.notes_dir / "delete-keep-source.md"
+    first_target.write_text(
+        "---\n"
+        "id: delete-first-target\n"
+        "title: Delete First Target\n"
+        "type: permanent\n"
+        "---\n"
+        "# Delete First Target\n\n"
+        "Target content.\n",
+        encoding="utf-8",
+    )
+    second_target.write_text(
+        "---\n"
+        "id: delete-second-target\n"
+        "title: Delete Second Target\n"
+        "type: permanent\n"
+        "---\n"
+        "# Delete Second Target\n\n"
+        "Target content.\n",
+        encoding="utf-8",
+    )
+    source_path.write_text(
+        "---\n"
+        "id: delete-keep-source\n"
+        "title: Delete Keep Source\n"
+        "type: permanent\n"
+        "---\n"
+        "# Delete Keep Source\n\n"
+        "Source content.\n\n"
+        "## Links\n"
+        "- reference [[delete-first-target|Delete First Target]]\n"
+        "- reference [[delete-second-target|Delete Second Target]]\n",
+        encoding="utf-8",
+    )
+
+    note_repository.rebuild_index()
+    original = note_repository.get("delete-keep-source")
+    assert original is not None
+    original_updated_at = original.updated_at
+    note_repository.delete("delete-first-target")
+    refreshed = note_repository.get("delete-keep-source")
+    stored_markdown = source_path.read_text(encoding="utf-8")
+
+    assert refreshed is not None
+    assert refreshed.updated_at == original_updated_at
+    assert [link.target_id for link in refreshed.links] == ["delete-second-target"]
+    assert "[[delete-first-target|Delete First Target]]" not in stored_markdown
+    assert "[[delete-second-target|Delete Second Target]]" in stored_markdown
+
+
+def test_delete_reuses_file_backed_source_note_for_preserved_timestamp_update(
+    note_repository, monkeypatch
+):
+    """Delete should not re-read a source note after loading it for cleanup."""
+    source = note_repository.create(
+        Note(title="Delete Read Source", content="Source content.")
+    )
+    target = note_repository.create(
+        Note(title="Delete Read Target", content="Target content.")
+    )
+    source.add_link(target.id, LinkType.REFERENCE)
+    note_repository.update(source)
+
+    original_get = note_repository.get
+    get_counts = {}
+
+    def tracking_get(note_id):
+        get_counts[note_id] = get_counts.get(note_id, 0) + 1
+        return original_get(note_id)
+
+    monkeypatch.setattr(note_repository, "get", tracking_get)
+
+    note_repository.delete(target.id)
+
+    assert get_counts.get(source.id, 0) == 1
+
+
+def test_delete_preserves_remaining_link_created_at(note_repository):
+    """Deleting one target should not reset created_at on remaining links."""
+    source = note_repository.create(
+        Note(title="Delete CreatedAt Source", content="Source content.")
+    )
+    first_target = note_repository.create(
+        Note(title="Delete CreatedAt First", content="First target.")
+    )
+    second_target = note_repository.create(
+        Note(title="Delete CreatedAt Second", content="Second target.")
+    )
+
+    source.add_link(first_target.id, LinkType.REFERENCE)
+    source.add_link(second_target.id, LinkType.REFERENCE)
+    note_repository.update(source)
+
+    with note_repository.session_factory() as session:
+        original_link = session.scalar(
+            select(DBLink).where(
+                DBLink.source_id == source.id,
+                DBLink.target_id == second_target.id,
+                DBLink.link_type == LinkType.REFERENCE.value,
+            )
+        )
+        assert original_link is not None
+        original_created_at = original_link.created_at
+
+    note_repository.delete(first_target.id)
+
+    with note_repository.session_factory() as session:
+        refreshed_link = session.scalar(
+            select(DBLink).where(
+                DBLink.source_id == source.id,
+                DBLink.target_id == second_target.id,
+                DBLink.link_type == LinkType.REFERENCE.value,
+            )
+        )
+        assert refreshed_link is not None
+        assert refreshed_link.created_at == original_created_at
 
 
 def test_rebuild_index_creates_database_backup(note_repository):

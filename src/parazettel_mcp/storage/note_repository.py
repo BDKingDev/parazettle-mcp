@@ -326,7 +326,8 @@ class NoteRepository(Repository[Note]):
                             link_type_str = link_type_str[2:].strip()
                         # Extract target ID and description
                         id_and_description = parts[1].split("]]", 1)
-                        target_id = _normalize_wiki_target(id_and_description[0])
+                        raw_target = id_and_description[0].strip()
+                        target_id = _normalize_wiki_target(raw_target)
                         description = None
                         if len(id_and_description) > 1:
                             description = id_and_description[1].strip()
@@ -577,10 +578,12 @@ class NoteRepository(Repository[Note]):
             for link in note.links:
                 key = f"{link.target_id}:{link.link_type.value}"
                 unique_links[key] = link
+            title_map = self._get_link_title_map(note, list(unique_links.values()))
             content += "\n\n## Links\n"
             for link in unique_links.values():
                 desc = f" {link.description}" if link.description else ""
-                content += f"- {link.link_type.value} [[{link.target_id}]]{desc}\n"
+                target_ref = self._format_wiki_link_target(link.target_id, title_map)
+                content += f"- {link.link_type.value} [[{target_ref}]]{desc}\n"
 
         # Create markdown with frontmatter
         post = frontmatter.Post(content, **metadata)
@@ -603,6 +606,35 @@ class NoteRepository(Repository[Note]):
 
         body = "\n".join(lines).strip()
         return f"{heading}\n\n{body}" if body else heading
+
+    def _get_link_title_map(self, note: Note, links: List[Link]) -> Dict[str, str]:
+        """Resolve link target titles in one query for markdown serialization."""
+        target_ids = {link.target_id for link in links}
+        if not target_ids:
+            return {}
+
+        with self.session_factory() as session:
+            rows = session.execute(
+                select(DBNote.id, DBNote.title).where(DBNote.id.in_(target_ids))
+            ).all()
+
+        title_map = {note_id: title for note_id, title in rows}
+        if note.id in target_ids:
+            title_map[note.id] = note.title
+        return title_map
+
+    def _format_wiki_link_target(
+        self, target_id: str, title_map: Dict[str, str]
+    ) -> str:
+        """Render a wiki-link target with a safe alias when possible."""
+        title = title_map.get(target_id)
+        if not title:
+            return target_id
+
+        alias = " ".join(title.splitlines()).strip()
+        if not alias or alias == target_id or "|" in alias or "]]" in alias:
+            return target_id
+        return f"{target_id}|{alias}"
 
     def _note_from_db(self, db_note: DBNote) -> Note:
         """Reconstruct a Note purely from DB rows — no file read required.
@@ -718,13 +750,73 @@ class NoteRepository(Repository[Note]):
 
     def update(self, note: Note) -> Note:
         """Update a note."""
+        return self._update_note(note)
+
+    def update_preserving_updated_at(
+        self,
+        note: Note,
+        *,
+        existing_note: Note,
+        existing_links_source: Optional[Note] = None,
+    ) -> Note:
+        """Rewrite derived markdown while keeping stable timestamps."""
+        return self._update_note(
+            note,
+            preserve_updated_at=True,
+            existing_note=existing_note,
+            existing_links_source=existing_links_source,
+        )
+
+    def _preserve_link_created_at(self, note: Note, existing_note: Note) -> None:
+        """Carry DB-backed link creation timestamps onto rewritten file-backed notes."""
+        exact_timestamps = {
+            (link.target_id, link.link_type, link.description): link.created_at
+            for link in existing_note.links
+        }
+        fallback_timestamps = {
+            (link.target_id, link.link_type): link.created_at
+            for link in existing_note.links
+        }
+
+        preserved_links = []
+        for link in note.links:
+            created_at = exact_timestamps.get(
+                (link.target_id, link.link_type, link.description)
+            )
+            if created_at is None:
+                created_at = fallback_timestamps.get((link.target_id, link.link_type))
+
+            if created_at is None or created_at == link.created_at:
+                preserved_links.append(link)
+                continue
+
+            preserved_links.append(link.model_copy(update={"created_at": created_at}))
+
+        note.links = preserved_links
+
+    def _update_note(
+        self,
+        note: Note,
+        *,
+        preserve_updated_at: bool = False,
+        existing_note: Optional[Note] = None,
+        existing_links_source: Optional[Note] = None,
+    ) -> Note:
+        """Update a note."""
         # Check if note exists
-        existing_note = self.get(note.id)
+        if existing_note is None:
+            existing_note = self.get(note.id)
         if not existing_note:
             raise ValueError(f"Note with ID {note.id} does not exist")
 
-        # Update timestamp
-        note.updated_at = datetime.datetime.now()
+        # Update timestamp unless the caller is only refreshing derived markdown.
+        if preserve_updated_at:
+            note.updated_at = existing_note.updated_at
+            self._preserve_link_created_at(
+                note, existing_links_source or existing_note
+            )
+        else:
+            note.updated_at = datetime.datetime.now()
 
         # Convert note to markdown
         markdown = self._note_to_markdown(note)
@@ -824,8 +916,16 @@ class NoteRepository(Repository[Note]):
         # so their markdown files stay consistent with the DB.
         source_notes = self.find_linked_notes(id, "incoming")
         for source_note in source_notes:
-            source_note.remove_link(id)
-            self.update(source_note)
+            file_backed_source = self.get(source_note.id)
+            if not file_backed_source:
+                continue
+            existing_source = file_backed_source.model_copy(deep=True)
+            file_backed_source.remove_link(id)
+            self.update_preserving_updated_at(
+                file_backed_source,
+                existing_note=existing_source,
+                existing_links_source=source_note,
+            )
 
         # Delete from database
         with self.session_factory() as session:

@@ -1,7 +1,9 @@
 """Tests for the ZettelService class."""
 
 import pytest
+from sqlalchemy import select
 
+from parazettel_mcp.models.db_models import DBLink
 from parazettel_mcp.models.schema import LinkType, NoteStatus, NoteType
 
 
@@ -136,6 +138,115 @@ def test_update_note_title_only_rewrites_heading(zettel_service):
     assert "# Original Service Title" not in retrieved_note.content
 
 
+def test_update_note_refreshes_incoming_aliases_that_match_old_title(zettel_service):
+    """Renaming a note should refresh incoming aliases to the new title."""
+    target = zettel_service.create_note(
+        title="Original Target Title",
+        content="Target body.",
+        note_type=NoteType.PERMANENT,
+    )
+    first_source = zettel_service.create_note(
+        title="First Alias Source",
+        content="Links with the current title alias.",
+        note_type=NoteType.PERMANENT,
+    )
+    second_source = zettel_service.create_note(
+        title="Second Alias Source",
+        content="Also links with the current title alias.",
+        note_type=NoteType.PERMANENT,
+    )
+
+    zettel_service.create_link(first_source.id, target.id, LinkType.REFERENCE)
+    zettel_service.create_link(second_source.id, target.id, LinkType.REFERENCE)
+
+    zettel_service.update_note(note_id=target.id, title="Renamed Target Title")
+
+    first_markdown = (
+        zettel_service.repository.notes_dir / f"{first_source.id}.md"
+    ).read_text(encoding="utf-8")
+    second_markdown = (
+        zettel_service.repository.notes_dir / f"{second_source.id}.md"
+    ).read_text(encoding="utf-8")
+
+    assert f"[[{target.id}|Renamed Target Title]]" in first_markdown
+    assert f"[[{target.id}|Original Target Title]]" not in first_markdown
+    assert f"[[{target.id}|Renamed Target Title]]" in second_markdown
+
+
+def test_update_note_refreshes_aliases_without_touching_source_timestamp(
+    zettel_service,
+):
+    """Alias-only rewrites should preserve the source note's updated_at value."""
+    target = zettel_service.create_note(
+        title="Timestamp Target Title",
+        content="Target body.",
+        note_type=NoteType.PERMANENT,
+    )
+    source = zettel_service.create_note(
+        title="Timestamp Source",
+        content="Source body.",
+        note_type=NoteType.PERMANENT,
+    )
+
+    zettel_service.create_link(source.id, target.id, LinkType.REFERENCE)
+    original_source = zettel_service.get_note(source.id)
+    assert original_source is not None
+    original_updated_at = original_source.updated_at
+
+    zettel_service.update_note(note_id=target.id, title="Renamed Timestamp Target")
+
+    refreshed_source = zettel_service.get_note(source.id)
+    assert refreshed_source is not None
+    assert refreshed_source.updated_at == original_updated_at
+
+    stored_markdown = (
+        zettel_service.repository.notes_dir / f"{source.id}.md"
+    ).read_text(encoding="utf-8")
+    assert f"[[{target.id}|Renamed Timestamp Target]]" in stored_markdown
+
+
+def test_update_note_refreshes_aliases_without_resetting_link_created_at(
+    zettel_service,
+):
+    """Alias-only rewrites should preserve source link created_at in the DB."""
+    target = zettel_service.create_note(
+        title="CreatedAt Target",
+        content="Target body.",
+        note_type=NoteType.PERMANENT,
+    )
+    source = zettel_service.create_note(
+        title="CreatedAt Source",
+        content="Source body.",
+        note_type=NoteType.PERMANENT,
+    )
+
+    zettel_service.create_link(source.id, target.id, LinkType.REFERENCE)
+
+    with zettel_service.repository.session_factory() as session:
+        original_link = session.scalar(
+            select(DBLink).where(
+                DBLink.source_id == source.id,
+                DBLink.target_id == target.id,
+                DBLink.link_type == LinkType.REFERENCE.value,
+            )
+        )
+        assert original_link is not None
+        original_created_at = original_link.created_at
+
+    zettel_service.update_note(note_id=target.id, title="CreatedAt Target Renamed")
+
+    with zettel_service.repository.session_factory() as session:
+        refreshed_link = session.scalar(
+            select(DBLink).where(
+                DBLink.source_id == source.id,
+                DBLink.target_id == target.id,
+                DBLink.link_type == LinkType.REFERENCE.value,
+            )
+        )
+        assert refreshed_link is not None
+        assert refreshed_link.created_at == original_created_at
+
+
 def test_update_note_assigns_project_routing(zettel_service):
     """Updating a note with project_id should inherit the project area and link it."""
     area = zettel_service.create_area_note(
@@ -224,6 +335,55 @@ def test_create_link(zettel_service):
     both_links = zettel_service.get_linked_notes(source_note.id, "both")
     assert len(both_links) == 1
     assert both_links[0].id == target_note.id
+
+
+def test_bidirectional_link_creation_preserves_aliases_and_single_links_section(
+    zettel_service,
+):
+    """Bidirectional link updates should not duplicate or flatten the links section."""
+    source_note = zettel_service.create_note(
+        title="Service Source With Alias",
+        content="Source note body.",
+        note_type=NoteType.PERMANENT,
+    )
+    existing_target = zettel_service.create_note(
+        title="Existing Target Title",
+        content="Existing target body.",
+        note_type=NoteType.PERMANENT,
+    )
+    new_target = zettel_service.create_note(
+        title="New Bidirectional Target",
+        content="New target body.",
+        note_type=NoteType.PERMANENT,
+    )
+
+    zettel_service.create_link(source_note.id, existing_target.id, LinkType.REFERENCE)
+
+    source, target = zettel_service.create_link(
+        source_id=source_note.id,
+        target_id=new_target.id,
+        link_type=LinkType.EXTENDS,
+        description="Fresh bidirectional link",
+        bidirectional=True,
+    )
+
+    source_markdown = (
+        zettel_service.repository.notes_dir / f"{source_note.id}.md"
+    ).read_text(encoding="utf-8")
+    target_markdown = (
+        zettel_service.repository.notes_dir / f"{new_target.id}.md"
+    ).read_text(encoding="utf-8")
+
+    assert source_markdown.count("## Links") == 1
+    assert target_markdown.count("## Links") == 1
+    assert f"[[{existing_target.id}|Existing Target Title]]" in source_markdown
+    assert (
+        f"- extends [[{new_target.id}|New Bidirectional Target]] Fresh bidirectional link"
+        in source_markdown
+    )
+    assert f"[[{source_note.id}|Service Source With Alias]]" in target_markdown
+    assert any(link.target_id == new_target.id for link in source.links)
+    assert any(link.target_id == source_note.id for link in target.links)
 
 
 def test_search_notes(zettel_service):
