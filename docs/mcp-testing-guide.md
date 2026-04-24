@@ -88,7 +88,7 @@ Areas (1):
 
 ### `pzk_create_project`
 
-Creates a project linked to an area.
+Creates a top-level project linked to an area, or a subproject linked to a parent project.
 
 **Call:**
 
@@ -103,10 +103,46 @@ Creates a project linked to an area.
 }
 ```
 
+To create a subproject through the same tool, pass `project_id` instead of a top-level `area_id`. The project will inherit the parent project's `area_id` automatically.
+
+```json
+{
+  "title": "Project note retrieval",
+  "content": "Add project-scoped context retrieval.",
+  "source": "transcript",
+  "project_id": "{PARENT_PROJECT_ID}",
+  "outcome": "Dedicated project context tool"
+}
+```
+
 **Expected output:**
 
 ```
 Project created successfully with ID: {PROJECT_ID}
+```
+
+---
+
+### `pzk_create_subproject`
+
+Creates a subproject under an existing parent project. This is the clearer user-facing path when you already know the parent project.
+
+**Call:**
+
+```json
+{
+  "parent_project_id": "{PARENT_PROJECT_ID}",
+  "title": "Project note retrieval",
+  "content": "Add project-scoped context retrieval.",
+  "source": "transcript",
+  "outcome": "Dedicated project context tool"
+}
+```
+
+**Expected output:**
+
+```
+Subproject created successfully with ID: {SUBPROJECT_ID}
 ```
 
 ---
@@ -139,7 +175,7 @@ Projects (1):
 
 ### `pzk_get_project`
 
-Returns a project with task status summary, next-task preview, routed notes, and linked projects.
+Returns a project with task status summary, next-task preview, parent-project context, direct subprojects, and routed notes.
 
 **Call:**
 
@@ -160,10 +196,13 @@ Tasks: 0 total
 Next Tasks:
 - None
 
-Notes:
+Parent Project:
+- Parent initiative (ID: {PARENT_PROJECT_ID})
+
+Subprojects:
 - None
 
-Linked Projects:
+Notes:
 - None
 
 # Parazettel MCP
@@ -375,7 +414,7 @@ Tasks for project {PROJECT_ID} (1):
 
 ### `pzk_get_project_notes`
 
-Returns the full note context for non-task notes routed to a specific project. Use this after `pzk_get_project` when you need the actual note bodies, not just note titles.
+Returns the full note context for non-task notes routed to a specific project. Use this after `pzk_get_project` when you need the actual note bodies, not just note titles. Subprojects are excluded from this output.
 
 **Call:**
 
@@ -992,9 +1031,11 @@ Change in note count: 0
 | `pzk_create_area` | title, content | cadence, tags |
 | `pzk_get_area` | area\_id | — |
 | `pzk_list_areas` | — | limit |
-| `pzk_create_project` | title, content, source, area\_id | outcome, deadline, tags |
+| `pzk_create_project` | title, content, source, area\_id | project\_id, outcome, deadline, tags |
+| `pzk_create_subproject` | parent\_project\_id, title, content, source | outcome, deadline, tags |
 | `pzk_list_projects` | — | include\_done, limit |
 | `pzk_get_project` | project\_id | — |
+| `pzk_get_project_notes` | project\_id | limit |
 | `pzk_get_project_tasks` | project\_id | status, limit |
 | `pzk_create_task` | title, content, project\_id | status, due\_date, priority, energy\_level, context, remind\_at, recurrence\_rule |
 | `pzk_update_task` | task\_id | project\_id, due\_date, priority, status, remind\_at, estimated\_minutes, recurrence\_rule, tags |
