@@ -546,6 +546,33 @@ class TestMcpServer:
         self.mock_zettel_service.get_note.assert_not_called()
         self.mock_zettel_service.get_note_by_title.assert_not_called()
 
+    def test_get_notes_tool_deduplicates_same_note_resolved_multiple_ways(self):
+        """pzk_get_notes should not repeat a note resolved by both ID and title."""
+        note = MagicMock()
+        note.id = "note123"
+        note.title = "First Note"
+        note.content = "# First Note\n\nUseful context."
+        note.note_type = NoteType.PERMANENT
+        note.project_id = "project123"
+        note.area_id = "area123"
+        note.created_at.isoformat.return_value = "2026-04-23T09:00:00"
+        note.updated_at.isoformat.return_value = "2026-04-23T09:15:00"
+        note.tags = []
+
+        self.mock_zettel_service.get_note.side_effect = (
+            lambda identifier: note if identifier == "note123" else None
+        )
+        self.mock_zettel_service.get_note_by_title.side_effect = (
+            lambda title: note if title == "First Note" else None
+        )
+
+        get_notes_func = self.registered_tools["pzk_get_notes"]
+        result = get_notes_func(identifiers=["note123", "First Note"])
+
+        assert "Notes retrieved (1/2):" in result
+        assert result.count("# First Note") == 1
+        assert "Missing identifiers" not in result
+
     def test_get_notes_by_tag_tool_formats_matching_notes_and_respects_limit(self):
         """pzk_get_notes_by_tag should render full note context for exact-tag matches."""
         first_note = MagicMock()
@@ -578,6 +605,17 @@ class TestMcpServer:
         assert "# First Note" in result
         assert "note456" not in result
         self.mock_zettel_service.get_notes_by_tag.assert_called_once_with("research")
+
+    def test_get_notes_by_tag_tool_rejects_non_positive_limits(self):
+        """pzk_get_notes_by_tag should require a positive limit."""
+        get_notes_by_tag_func = self.registered_tools["pzk_get_notes_by_tag"]
+
+        zero_result = get_notes_by_tag_func(tag="research", limit=0)
+        negative_result = get_notes_by_tag_func(tag="research", limit=-1)
+
+        assert zero_result == "Limit must be greater than 0."
+        assert negative_result == "Limit must be greater than 0."
+        self.mock_zettel_service.get_notes_by_tag.assert_not_called()
 
     def test_get_notes_by_tag_tool_handles_empty_and_missing_results(self):
         """pzk_get_notes_by_tag should reject blank tags and handle empty matches."""

@@ -295,11 +295,14 @@ class ZettelkastenMcpServer:
                     return "Provide at least one note identifier."
 
                 notes: List[Note] = []
+                seen_note_ids = set()
                 missing: List[str] = []
                 for identifier in normalized:
                     note = self._resolve_note_identifier(identifier)
                     if note:
-                        notes.append(note)
+                        if note.id not in seen_note_ids:
+                            notes.append(note)
+                            seen_note_ids.add(note.id)
                     else:
                         missing.append(identifier)
 
@@ -332,6 +335,8 @@ class ZettelkastenMcpServer:
                 normalized_tag = str(tag).strip()
                 if not normalized_tag:
                     return "Provide a tag name."
+                if limit <= 0:
+                    return "Limit must be greater than 0."
 
                 notes = self.zettel_service.get_notes_by_tag(normalized_tag)
                 notes = notes[:limit]
