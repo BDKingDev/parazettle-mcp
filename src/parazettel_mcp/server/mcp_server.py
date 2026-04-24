@@ -76,6 +76,54 @@ class ZettelkastenMcpServer:
             # return f"An unexpected error occurred. Error ID: {error_id}"
             return f"Error: {str(error)}"
 
+    @staticmethod
+    def _format_note_result(note: Note) -> str:
+        """Render a note using the standard MCP note output."""
+        result = f"ID: {note.id}\n"
+        result += f"Type: {note.note_type.value}\n"
+        result += f"Created: {note.created_at.isoformat()}\n"
+        result += f"Updated: {note.updated_at.isoformat()}\n"
+        if note.project_id:
+            result += f"Project ID: {note.project_id}\n"
+        if note.area_id:
+            result += f"Area ID: {note.area_id}\n"
+        if note.tags:
+            result += f"Tags: {', '.join(tag.name for tag in note.tags)}\n"
+        result += f"\n{note.content}\n"
+        return result
+
+    @staticmethod
+    def _get_project_preview_tasks(
+        tasks: List[Note], limit: int = 5
+    ) -> List[Note]:
+        """Return the most actionable project tasks for summary views."""
+        actionable_statuses = {NoteStatus.ACTIVE, NoteStatus.READY}
+        status_order = {NoteStatus.ACTIVE: 0, NoteStatus.READY: 1}
+        far_future = datetime.max.date()
+        actionable = [task for task in tasks if task.status in actionable_statuses]
+        return sorted(
+            actionable,
+            key=lambda task: (
+                status_order.get(task.status, 99),
+                task.due_date or far_future,
+                -(task.priority or 0),
+                task.title.lower(),
+            ),
+        )[:limit]
+
+    @staticmethod
+    def _format_project_preview_task(task: Note) -> str:
+        """Render one actionable task in a compact, parseable summary format."""
+        line = f"- [{task.status.value if task.status else 'none'}] {task.title} (ID: {task.id})"
+        details = []
+        if task.priority:
+            details.append(f"P{task.priority}")
+        if task.due_date:
+            details.append(f"due {task.due_date}")
+        if details:
+            line += " - " + ", ".join(details)
+        return line
+
     def _register_tools(self) -> None:
         """Register MCP tools."""
 
@@ -212,21 +260,7 @@ class ZettelkastenMcpServer:
                     note = self.zettel_service.get_note_by_title(identifier)
                 if not note:
                     return f"Note not found: {identifier}"
-
-                # Format the note (content already includes the # Title heading)
-                result = f"ID: {note.id}\n"
-                result += f"Type: {note.note_type.value}\n"
-                result += f"Created: {note.created_at.isoformat()}\n"
-                result += f"Updated: {note.updated_at.isoformat()}\n"
-                if note.project_id:
-                    result += f"Project ID: {note.project_id}\n"
-                if note.area_id:
-                    result += f"Area ID: {note.area_id}\n"
-                if note.tags:
-                    result += f"Tags: {', '.join(tag.name for tag in note.tags)}\n"
-                # Add note content, including the Links section added by _note_to_markdown()
-                result += f"\n{note.content}\n"
-                return result
+                return self._format_note_result(note)
             except Exception as e:
                 return self.format_error_response(e)
 
@@ -1084,7 +1118,7 @@ class ZettelkastenMcpServer:
 
         @self.mcp.tool(name="pzk_get_project")
         def pzk_get_project(project_id: str) -> str:
-            """Get a project note with a summary of its linked tasks by status.
+            """Get a project note with task, note, and linked-project context.
             Args:
                 project_id: ID of the project note
             """
@@ -1097,6 +1131,7 @@ class ZettelkastenMcpServer:
                 tasks = self.zettel_service.get_project_tasks(project_id)
                 project_notes = self.zettel_service.get_project_notes(project_id)
                 linked_projects = self.zettel_service.get_linked_projects(project_id)
+                preview_tasks = self._get_project_preview_tasks(tasks)
                 counts: dict = {}
                 for t in tasks:
                     s = t.status.value if t.status else "none"
@@ -1110,7 +1145,13 @@ class ZettelkastenMcpServer:
                 out += f"Tasks: {len(tasks)} total"
                 if counts:
                     out += " (" + ", ".join(f"{v} {k}" for k, v in counts.items()) + ")"
-                out += "\n\nNotes:\n"
+                out += "\n\nNext Tasks:\n"
+                if preview_tasks:
+                    for task in preview_tasks:
+                        out += self._format_project_preview_task(task) + "\n"
+                else:
+                    out += "- None\n"
+                out += "\nNotes:\n"
                 if project_notes:
                     for note in project_notes:
                         out += (
@@ -1129,6 +1170,26 @@ class ZettelkastenMcpServer:
                 else:
                     out += "- None\n"
                 out += f"\n\n{project.content}\n"
+                return out
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="pzk_get_project_notes")
+        def pzk_get_project_notes(project_id: str, limit: int = 50) -> str:
+            """Get all non-task notes routed to a project.
+            Args:
+                project_id: ID of the project note
+                limit: Maximum results
+            """
+            try:
+                notes = self.zettel_service.get_project_notes(project_id)
+                notes = notes[:limit]
+                if not notes:
+                    return f"No project notes found for project {project_id}."
+
+                out = f"Project notes for {project_id} ({len(notes)}):\n\n"
+                rendered_notes = [self._format_note_result(note) for note in notes]
+                out += "\n---\n\n".join(rendered_notes)
                 return out
             except Exception as e:
                 return self.format_error_response(e)
