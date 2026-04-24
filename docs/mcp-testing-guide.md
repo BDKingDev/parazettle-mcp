@@ -544,7 +544,7 @@ Passing `tags` replaces the task's existing tags with the provided list.
 ```json
 {
   "task_id": "{TASK_ID}",
-  "project_id": "{NEW_PROJECT_ID}"
+  "parent_project_id": "{NEW_PROJECT_ID}"
 }
 ```
 
@@ -644,11 +644,11 @@ Updates an existing note's content, metadata, and project/area routing. A title-
 }
 ```
 
-For project notes, use `parent_project_id` when you mean hierarchy rather than ordinary note routing:
+Use `parent_project_id` when you want to express project routing in parent-project terms:
 
 ```json
 {
-  "note_id": "{PROJECT_ID}",
+  "note_id": "{NOTE_ID}",
   "parent_project_id": "{PARENT_PROJECT_ID}"
 }
 ```
@@ -1047,7 +1047,7 @@ Change in note count: 0
 | `pzk_get_project_notes` | project\_id | limit |
 | `pzk_get_project_tasks` | project\_id | status, limit |
 | `pzk_create_task` | title, content, project\_id | status, due\_date, priority, energy\_level, context, remind\_at, recurrence\_rule |
-| `pzk_update_task` | task\_id | project\_id, due\_date, priority, status, remind\_at, estimated\_minutes, recurrence\_rule, tags |
+| `pzk_update_task` | task\_id | project\_id, parent\_project\_id, due\_date, priority, status, remind\_at, estimated\_minutes, recurrence\_rule, tags |
 | `pzk_get_tasks` | — | status, project\_id, due\_date, overdue\_only, priority, limit |
 | `pzk_get_todays_tasks` | — | include\_overdue |
 | `pzk_get_reminders` | — | limit |

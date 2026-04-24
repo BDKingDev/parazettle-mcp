@@ -373,7 +373,7 @@ class ZettelkastenMcpServer:
                 tags: New comma-separated list of tags (optional)
                 status: New workflow status (optional). Pass empty string to clear it.
                 project_id: New project routing (optional). Pass empty string to clear it.
-                parent_project_id: New parent project for project notes (optional). Pass empty string to clear it.
+                parent_project_id: New parent project / project routing (optional). Pass empty string to clear it.
                 area_id: New area routing (optional). Pass empty string to clear it.
             """
             try:
@@ -415,11 +415,6 @@ class ZettelkastenMcpServer:
                     else:
                         update_kwargs["status"] = None
                 if parent_project_id is not None:
-                    if note.note_type != NoteType.PROJECT:
-                        return (
-                            "parent_project_id is only valid for project notes. "
-                            "Use project_id for ordinary note routing."
-                        )
                     normalized_parent_project_id = parent_project_id.strip()
                     if project_id is not None:
                         normalized_project_id = project_id.strip()
@@ -1002,6 +997,7 @@ class ZettelkastenMcpServer:
             task_id: str,
             status: Optional[str] = None,
             project_id: Optional[str] = None,
+            parent_project_id: Optional[str] = None,
             due_date: Optional[str] = None,
             remind_at: Optional[str] = None,
             priority: Optional[int] = None,
@@ -1020,6 +1016,7 @@ class ZettelkastenMcpServer:
                 task_id: ID of the task note
                 status: inbox, ready, scheduled, active, waiting, someday, done, cancelled
                 project_id: ID of the project this task belongs to
+                parent_project_id: Alternate name for the project this task belongs to
                 due_date: Due date YYYY-MM-DD
                 remind_at: Reminder date YYYY-MM-DD
                 priority: 1 (low) to 4 (critical)
@@ -1058,11 +1055,25 @@ class ZettelkastenMcpServer:
                 update_kwargs = {}
                 if new_status is not None:
                     update_kwargs["status"] = new_status
+                if parent_project_id is not None:
+                    normalized_parent_project_id = parent_project_id.strip()
+                    if project_id is not None:
+                        normalized_project_id = project_id.strip()
+                        if normalized_project_id != normalized_parent_project_id:
+                            return (
+                                "project_id and parent_project_id must match when "
+                                "both are provided."
+                            )
+                    if not normalized_parent_project_id:
+                        return (
+                            "parent_project_id is required. Tasks must belong to a project."
+                        )
+                    update_kwargs["project_id"] = normalized_parent_project_id
                 if project_id is not None:
                     normalized_project_id = project_id.strip()
                     if not normalized_project_id:
                         return "project_id is required. Tasks must belong to a project."
-                    update_kwargs["project_id"] = normalized_project_id
+                    update_kwargs.setdefault("project_id", normalized_project_id)
                 if due_date is not None:
                     update_kwargs["due_date"] = parsed_due
                 if remind_at is not None:

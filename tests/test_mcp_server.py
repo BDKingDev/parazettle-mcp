@@ -461,11 +461,11 @@ class TestMcpServer:
             area_id="area456",
         )
 
-    def test_update_note_tool_uses_parent_project_id_for_project_notes(self):
-        """pzk_update_note should map parent_project_id to project_id for project notes."""
+    def test_update_note_tool_uses_parent_project_id_alias(self):
+        """pzk_update_note should map parent_project_id to project_id broadly."""
         mock_note = MagicMock()
         mock_note.id = "note123"
-        mock_note.note_type = NoteType.PROJECT
+        mock_note.note_type = NoteType.PERMANENT
         self.mock_zettel_service.get_note.return_value = mock_note
         self.mock_zettel_service.update_note.return_value = mock_note
 
@@ -485,27 +485,11 @@ class TestMcpServer:
             project_id="project123",
         )
 
-    def test_update_note_tool_rejects_parent_project_id_for_non_project_notes(self):
-        """pzk_update_note should keep parent_project_id reserved for project notes."""
-        mock_note = MagicMock()
-        mock_note.id = "note123"
-        mock_note.note_type = NoteType.PERMANENT
-        self.mock_zettel_service.get_note.return_value = mock_note
-
-        update_note_func = self.registered_tools["pzk_update_note"]
-        result = update_note_func(
-            note_id="note123",
-            parent_project_id="project123",
-        )
-
-        assert "only valid for project notes" in result
-        self.mock_zettel_service.update_note.assert_not_called()
-
     def test_update_note_tool_rejects_conflicting_parent_and_project_ids(self):
         """pzk_update_note should reject conflicting routing aliases."""
         mock_note = MagicMock()
         mock_note.id = "note123"
-        mock_note.note_type = NoteType.PROJECT
+        mock_note.note_type = NoteType.PERMANENT
         self.mock_zettel_service.get_note.return_value = mock_note
 
         update_note_func = self.registered_tools["pzk_update_note"]
@@ -1037,6 +1021,39 @@ class TestMcpServer:
         self.mock_zettel_service.update_task.assert_called_once_with(
             "task001", project_id="project999", priority=3
         )
+
+    def test_update_task_accepts_parent_project_id_alias(self):
+        """pzk_update_task should accept parent_project_id as a clearer alias."""
+        mock_task = MagicMock()
+        mock_task.note_type = NoteType.TASK
+        mock_task.recurrence_rule = None
+        self.mock_zettel_service.get_note.return_value = mock_task
+        self.mock_zettel_service.update_task.return_value = mock_task
+
+        fn = self.registered_tools["pzk_update_task"]
+        result = fn(task_id="task001", parent_project_id="project999", priority=3)
+
+        assert "updated successfully" in result
+        self.mock_zettel_service.update_task.assert_called_once_with(
+            "task001", project_id="project999", priority=3
+        )
+
+    def test_update_task_rejects_conflicting_parent_and_project_ids(self):
+        """pzk_update_task should reject conflicting routing aliases."""
+        mock_task = MagicMock()
+        mock_task.note_type = NoteType.TASK
+        mock_task.recurrence_rule = None
+        self.mock_zettel_service.get_note.return_value = mock_task
+
+        fn = self.registered_tools["pzk_update_task"]
+        result = fn(
+            task_id="task001",
+            project_id="project123",
+            parent_project_id="project999",
+        )
+
+        assert "must match" in result
+        self.mock_zettel_service.update_task.assert_not_called()
 
     def test_get_tasks_tool_formats_results_and_parses_filters(self):
         """pzk_get_tasks should parse filters and render matching tasks."""
