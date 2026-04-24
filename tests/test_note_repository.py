@@ -320,6 +320,26 @@ def test_get_normalizes_piped_wiki_link_targets(note_repository):
     assert all("|" not in link.target_id for link in source.links)
 
 
+def test_update_adds_title_aliases_to_non_aliased_links(note_repository):
+    """Touched notes should rewrite wiki-links with the target note title as alias."""
+    target = Note(title="Alias Target", content="Target content.")
+    source = Note(title="Alias Source", content="Source content.")
+    saved_target = note_repository.create(target)
+    saved_source = note_repository.create(source)
+
+    saved_source.add_link(saved_target.id, LinkType.REFERENCE, "Existing description")
+    note_repository.update(saved_source)
+
+    stored_markdown = (
+        note_repository.notes_dir / f"{saved_source.id}.md"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        f"- reference [[{saved_target.id}|Alias Target]] Existing description"
+        in stored_markdown
+    )
+
+
 def test_coerce_datetime_handles_yaml_parsed_dates():
     """YAML may parse unquoted timestamp frontmatter before repository parsing."""
     import datetime
@@ -430,6 +450,56 @@ def test_delete_cleans_aliased_source_links(note_repository):
     assert refreshed is not None
     assert refreshed.links == []
     assert "[[delete-target|Delete Target]]" not in stored_markdown
+
+
+def test_delete_preserves_aliases_for_remaining_links(note_repository):
+    """Deleting one target should not strip aliases from other remaining links."""
+    first_target = note_repository.notes_dir / "delete-first-target.md"
+    second_target = note_repository.notes_dir / "delete-second-target.md"
+    source_path = note_repository.notes_dir / "delete-keep-source.md"
+    first_target.write_text(
+        "---\n"
+        "id: delete-first-target\n"
+        "title: Delete First Target\n"
+        "type: permanent\n"
+        "---\n"
+        "# Delete First Target\n\n"
+        "Target content.\n",
+        encoding="utf-8",
+    )
+    second_target.write_text(
+        "---\n"
+        "id: delete-second-target\n"
+        "title: Delete Second Target\n"
+        "type: permanent\n"
+        "---\n"
+        "# Delete Second Target\n\n"
+        "Target content.\n",
+        encoding="utf-8",
+    )
+    source_path.write_text(
+        "---\n"
+        "id: delete-keep-source\n"
+        "title: Delete Keep Source\n"
+        "type: permanent\n"
+        "---\n"
+        "# Delete Keep Source\n\n"
+        "Source content.\n\n"
+        "## Links\n"
+        "- reference [[delete-first-target|Delete First Target]]\n"
+        "- reference [[delete-second-target|Delete Second Target]]\n",
+        encoding="utf-8",
+    )
+
+    note_repository.rebuild_index()
+    note_repository.delete("delete-first-target")
+    refreshed = note_repository.get("delete-keep-source")
+    stored_markdown = source_path.read_text(encoding="utf-8")
+
+    assert refreshed is not None
+    assert [link.target_id for link in refreshed.links] == ["delete-second-target"]
+    assert "[[delete-first-target|Delete First Target]]" not in stored_markdown
+    assert "[[delete-second-target|Delete Second Target]]" in stored_markdown
 
 
 def test_rebuild_index_creates_database_backup(note_repository):

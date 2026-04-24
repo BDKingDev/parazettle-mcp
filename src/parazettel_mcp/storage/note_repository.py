@@ -326,7 +326,8 @@ class NoteRepository(Repository[Note]):
                             link_type_str = link_type_str[2:].strip()
                         # Extract target ID and description
                         id_and_description = parts[1].split("]]", 1)
-                        target_id = _normalize_wiki_target(id_and_description[0])
+                        raw_target = id_and_description[0].strip()
+                        target_id = _normalize_wiki_target(raw_target)
                         description = None
                         if len(id_and_description) > 1:
                             description = id_and_description[1].strip()
@@ -580,7 +581,11 @@ class NoteRepository(Repository[Note]):
             content += "\n\n## Links\n"
             for link in unique_links.values():
                 desc = f" {link.description}" if link.description else ""
-                content += f"- {link.link_type.value} [[{link.target_id}]]{desc}\n"
+                target = self.get(link.target_id)
+                target_ref = (
+                    f"{link.target_id}|{target.title}" if target else link.target_id
+                )
+                content += f"- {link.link_type.value} [[{target_ref}]]{desc}\n"
 
         # Create markdown with frontmatter
         post = frontmatter.Post(content, **metadata)
@@ -824,8 +829,11 @@ class NoteRepository(Repository[Note]):
         # so their markdown files stay consistent with the DB.
         source_notes = self.find_linked_notes(id, "incoming")
         for source_note in source_notes:
-            source_note.remove_link(id)
-            self.update(source_note)
+            file_backed_source = self.get(source_note.id)
+            if not file_backed_source:
+                continue
+            file_backed_source.remove_link(id)
+            self.update(file_backed_source)
 
         # Delete from database
         with self.session_factory() as session:

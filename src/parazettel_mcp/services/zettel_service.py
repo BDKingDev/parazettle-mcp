@@ -213,6 +213,7 @@ class ZettelService:
         note = self.repository.get(note_id)
         if not note:
             raise ValueError(f"Note with ID {note_id} not found")
+        title_changed = title is not None and title != note.title
         previous_project_id = note.project_id
 
         # Update fields
@@ -258,9 +259,24 @@ class ZettelService:
 
         # Save to repository
         note = self.repository.update(note)
-        return self._sync_part_of_link(
+        note = self._sync_part_of_link(
             note.id, previous_project_id, note.project_id
         )
+        if title_changed:
+            self._refresh_incoming_link_aliases(note.id)
+            refreshed_note = self.repository.get(note.id)
+            if refreshed_note is not None:
+                note = refreshed_note
+        return note
+
+    def _refresh_incoming_link_aliases(self, note_id: str) -> None:
+        """Rewrite incoming source notes so aliases follow the target title."""
+        incoming_notes = self.repository.find_linked_notes(note_id, "incoming")
+        for incoming_note in incoming_notes:
+            source_note = self.repository.get(incoming_note.id)
+            if not source_note:
+                continue
+            self.repository.update(source_note)
 
     def delete_note(self, note_id: str) -> None:
         """Delete a note."""
