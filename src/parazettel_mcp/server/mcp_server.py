@@ -361,6 +361,7 @@ class ZettelkastenMcpServer:
             tags: Optional[str] = None,
             status: Optional[str] = None,
             project_id: Optional[str] = None,
+            parent_project_id: Optional[str] = None,
             area_id: Optional[str] = None,
         ) -> str:
             """Update an existing note.
@@ -372,6 +373,7 @@ class ZettelkastenMcpServer:
                 tags: New comma-separated list of tags (optional)
                 status: New workflow status (optional). Pass empty string to clear it.
                 project_id: New project routing (optional). Pass empty string to clear it.
+                parent_project_id: New parent project for project notes (optional). Pass empty string to clear it.
                 area_id: New area routing (optional). Pass empty string to clear it.
             """
             try:
@@ -412,9 +414,28 @@ class ZettelkastenMcpServer:
                             )
                     else:
                         update_kwargs["status"] = None
+                if parent_project_id is not None:
+                    if note.note_type != NoteType.PROJECT:
+                        return (
+                            "parent_project_id is only valid for project notes. "
+                            "Use project_id for ordinary note routing."
+                        )
+                    normalized_parent_project_id = parent_project_id.strip()
+                    if project_id is not None:
+                        normalized_project_id = project_id.strip()
+                        if normalized_project_id != normalized_parent_project_id:
+                            return (
+                                "project_id and parent_project_id must match when "
+                                "both are provided."
+                            )
+                    update_kwargs["project_id"] = (
+                        normalized_parent_project_id or None
+                    )
                 if project_id is not None:
                     normalized_project_id = project_id.strip()
-                    update_kwargs["project_id"] = normalized_project_id or None
+                    update_kwargs.setdefault(
+                        "project_id", normalized_project_id or None
+                    )
                 if area_id is not None:
                     normalized_area_id = area_id.strip()
                     update_kwargs["area_id"] = normalized_area_id or None
@@ -1154,7 +1175,7 @@ class ZettelkastenMcpServer:
             content: str,
             source: str,
             area_id: Optional[str] = None,
-            project_id: Optional[str] = None,
+            parent_project_id: Optional[str] = None,
             outcome: Optional[str] = None,
             deadline: Optional[str] = None,
             tags: Optional[str] = None,
@@ -1165,7 +1186,7 @@ class ZettelkastenMcpServer:
                 content: Project description
                 source: Origin of the project note
                 area_id: ID of the area this project belongs to
-                project_id: Optional parent project ID for subprojects
+                parent_project_id: Optional parent project ID for subprojects
                 outcome: The desired outcome/goal
                 deadline: Target completion date (YYYY-MM-DD)
                 tags: Comma-separated tags
@@ -1181,19 +1202,25 @@ class ZettelkastenMcpServer:
                         f"Valid: {', '.join(s.value for s in NoteSource)}"
                     )
                 resolved_area_id = area_id
-                if project_id:
-                    parent_project = self.zettel_service.get_note(project_id)
+                if parent_project_id:
+                    parent_project = self.zettel_service.get_note(parent_project_id)
                     if not parent_project or parent_project.note_type != NoteType.PROJECT:
-                        return f"project_id {project_id} is not a valid project note."
+                        return (
+                            f"parent_project_id {parent_project_id} "
+                            "is not a valid project note."
+                        )
                     if not parent_project.area_id:
-                        return f"project_id {project_id} does not have an area_id."
+                        return (
+                            f"parent_project_id {parent_project_id} "
+                            "does not have an area_id."
+                        )
                     if (
                         resolved_area_id
                         and resolved_area_id != parent_project.area_id
                     ):
                         return (
                             f"area_id {resolved_area_id} does not match project "
-                            f"{project_id} area_id {parent_project.area_id}"
+                            f"{parent_project_id} area_id {parent_project.area_id}"
                         )
                     resolved_area_id = parent_project.area_id
                 elif not resolved_area_id:
@@ -1216,7 +1243,7 @@ class ZettelkastenMcpServer:
                     outcome=outcome,
                     deadline=parsed_deadline,
                     area_id=resolved_area_id,
-                    project_id=project_id,
+                    project_id=parent_project_id,
                     tags=tag_list,
                     source=note_source,
                 )

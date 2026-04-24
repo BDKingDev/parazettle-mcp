@@ -129,7 +129,7 @@ All tools are prefixed `pzk_`.
 | `pzk_create_area` | Create an area note with optional review cadence |
 | `pzk_get_area` | Get an area with linked projects and task counts |
 | `pzk_list_areas` | List all areas |
-| `pzk_create_project` | Create a top-level project or a subproject with an explicit source |
+| `pzk_create_project` | Create a top-level project or a subproject with `parent_project_id` |
 | `pzk_create_subproject` | Create a subproject under an existing parent project |
 | `pzk_list_projects` | List active projects sorted by deadline |
 | `pzk_get_project` | Get a project summary with task counts, next tasks, routed notes, parent project, and subprojects |

@@ -80,7 +80,7 @@ pzk_create_subproject
   outcome: "A repeatable weekly 5K training plan"
 ```
 
-Advanced callers can also use `pzk_create_project` with `project_id: <parent_project_id>`. In both cases, the subproject inherits the parent project's `area_id` automatically.
+Advanced callers can also use `pzk_create_project` with `parent_project_id: <project_id>`. In both cases, the subproject inherits the parent project's `area_id` automatically.
 
 ### 3. Create tasks linked to the project
 

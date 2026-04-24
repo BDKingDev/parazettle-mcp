@@ -103,14 +103,14 @@ Creates a top-level project linked to an area, or a subproject linked to a paren
 }
 ```
 
-To create a subproject through the same tool, pass `project_id` instead of a top-level `area_id`. The project will inherit the parent project's `area_id` automatically.
+To create a subproject through the same tool, pass `parent_project_id` instead of a top-level `area_id`. The project will inherit the parent project's `area_id` automatically.
 
 ```json
 {
   "title": "Project note retrieval",
   "content": "Add project-scoped context retrieval.",
   "source": "transcript",
-  "project_id": "{PARENT_PROJECT_ID}",
+  "parent_project_id": "{PARENT_PROJECT_ID}",
   "outcome": "Dedicated project context tool"
 }
 ```
@@ -644,6 +644,15 @@ Updates an existing note's content, metadata, and project/area routing. A title-
 }
 ```
 
+For project notes, use `parent_project_id` when you mean hierarchy rather than ordinary note routing:
+
+```json
+{
+  "note_id": "{PROJECT_ID}",
+  "parent_project_id": "{PARENT_PROJECT_ID}"
+}
+```
+
 **Expected output:**
 
 ```
@@ -1031,7 +1040,7 @@ Change in note count: 0
 | `pzk_create_area` | title, content | cadence, tags |
 | `pzk_get_area` | area\_id | — |
 | `pzk_list_areas` | — | limit |
-| `pzk_create_project` | title, content, source, area\_id | project\_id, outcome, deadline, tags |
+| `pzk_create_project` | title, content, source, area\_id | parent\_project\_id, outcome, deadline, tags |
 | `pzk_create_subproject` | parent\_project\_id, title, content, source | outcome, deadline, tags |
 | `pzk_list_projects` | — | include\_done, limit |
 | `pzk_get_project` | project\_id | — |
@@ -1044,7 +1053,7 @@ Change in note count: 0
 | `pzk_get_reminders` | — | limit |
 | `pzk_create_note` | title, content | note\_type, source, area\_id, project\_id, tags |
 | `pzk_get_note` | identifier | — |
-| `pzk_update_note` | note\_id | title, content, note\_type, tags, status, project\_id, area\_id |
+| `pzk_update_note` | note\_id | title, content, note\_type, tags, status, project\_id, parent\_project\_id, area\_id |
 | `pzk_delete_note` | note\_id | — |
 | `pzk_create_link` | source\_id, target\_id | link\_type, description, bidirectional |
 | `pzk_remove_link` | source\_id, target\_id | bidirectional |

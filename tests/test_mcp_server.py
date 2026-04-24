@@ -306,7 +306,7 @@ class TestMcpServer:
         )
 
     def test_create_project_tool_can_create_subproject(self):
-        """pzk_create_project should accept project_id for advanced subproject creation."""
+        """pzk_create_project should accept parent_project_id for advanced subproject creation."""
         mock_project = MagicMock()
         mock_project.id = "project123"
         mock_parent = MagicMock()
@@ -327,7 +327,7 @@ class TestMcpServer:
             title="Launch slice",
             content="Ship one slice of the larger effort.",
             source="transcript",
-            project_id="project999",
+            parent_project_id="project999",
             tags="child",
         )
 
@@ -461,6 +461,63 @@ class TestMcpServer:
             area_id="area456",
         )
 
+    def test_update_note_tool_uses_parent_project_id_for_project_notes(self):
+        """pzk_update_note should map parent_project_id to project_id for project notes."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        mock_note.note_type = NoteType.PROJECT
+        self.mock_zettel_service.get_note.return_value = mock_note
+        self.mock_zettel_service.update_note.return_value = mock_note
+
+        update_note_func = self.registered_tools["pzk_update_note"]
+        result = update_note_func(
+            note_id="note123",
+            parent_project_id="project123",
+        )
+
+        assert "updated successfully" in result
+        self.mock_zettel_service.update_note.assert_called_with(
+            note_id="note123",
+            title=None,
+            content=None,
+            note_type=None,
+            tags=None,
+            project_id="project123",
+        )
+
+    def test_update_note_tool_rejects_parent_project_id_for_non_project_notes(self):
+        """pzk_update_note should keep parent_project_id reserved for project notes."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        mock_note.note_type = NoteType.PERMANENT
+        self.mock_zettel_service.get_note.return_value = mock_note
+
+        update_note_func = self.registered_tools["pzk_update_note"]
+        result = update_note_func(
+            note_id="note123",
+            parent_project_id="project123",
+        )
+
+        assert "only valid for project notes" in result
+        self.mock_zettel_service.update_note.assert_not_called()
+
+    def test_update_note_tool_rejects_conflicting_parent_and_project_ids(self):
+        """pzk_update_note should reject conflicting routing aliases."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        mock_note.note_type = NoteType.PROJECT
+        self.mock_zettel_service.get_note.return_value = mock_note
+
+        update_note_func = self.registered_tools["pzk_update_note"]
+        result = update_note_func(
+            note_id="note123",
+            project_id="project123",
+            parent_project_id="project456",
+        )
+
+        assert "must match" in result
+        self.mock_zettel_service.update_note.assert_not_called()
+
     def test_update_note_tool_clears_project_id_with_empty_string(self):
         """pzk_update_note clears project routing when given an empty string."""
         mock_note = MagicMock()
@@ -470,6 +527,27 @@ class TestMcpServer:
 
         update_note_func = self.registered_tools["pzk_update_note"]
         result = update_note_func(note_id="note123", project_id="")
+
+        assert "updated successfully" in result
+        self.mock_zettel_service.update_note.assert_called_with(
+            note_id="note123",
+            title=None,
+            content=None,
+            note_type=None,
+            tags=None,
+            project_id=None,
+        )
+
+    def test_update_note_tool_clears_parent_project_id_with_empty_string(self):
+        """pzk_update_note clears a project parent when given an empty parent_project_id."""
+        mock_note = MagicMock()
+        mock_note.id = "note123"
+        mock_note.note_type = NoteType.PROJECT
+        self.mock_zettel_service.get_note.return_value = mock_note
+        self.mock_zettel_service.update_note.return_value = mock_note
+
+        update_note_func = self.registered_tools["pzk_update_note"]
+        result = update_note_func(note_id="note123", parent_project_id="")
 
         assert "updated successfully" in result
         self.mock_zettel_service.update_note.assert_called_with(
