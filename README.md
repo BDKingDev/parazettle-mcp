@@ -83,6 +83,8 @@ Applies to any note type. Tasks flow through the action lifecycle; knowledge not
 | `part_of` | `has_part` | Task/note belongs to a project or area |
 | `blocks` | `blocked_by` | One task blocks another |
 
+Parazettel also understands Obsidian-style piped wiki-links such as `[[NOTE_ID|Displayed Title]]`. On ingest, the target note ID is normalized from the link target, so aliases and heading fragments do not break indexing. When a note is rewritten, touched wiki-links are normalized to the target note title when the alias is safe to render. Renaming a note refreshes incoming title aliases, and deleting a note removes incoming markdown references.
+
 ---
 
 ## Available MCP Tools
@@ -127,7 +129,8 @@ All tools are prefixed `pzk_`.
 | `pzk_list_areas` | List all areas |
 | `pzk_create_project` | Create a project linked to an area with an explicit source |
 | `pzk_list_projects` | List active projects sorted by deadline |
-| `pzk_get_project` | Get a project with task summary, routed notes, and linked projects |
+| `pzk_get_project` | Get a project summary with task counts, next tasks, routed notes, and linked projects |
+| `pzk_get_project_notes` | Get full routed note context for a project |
 | `pzk_get_project_tasks` | Get all tasks for a project |
 
 ---
