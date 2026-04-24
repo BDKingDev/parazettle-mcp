@@ -276,8 +276,11 @@ class ZettelService:
             source_note = self.repository.get(incoming_note.id)
             if not source_note:
                 continue
+            existing_source = source_note.model_copy(deep=True)
             self.repository.update_preserving_updated_at(
-                source_note, existing_note=source_note
+                source_note,
+                existing_note=existing_source,
+                existing_links_source=incoming_note,
             )
 
     def delete_note(self, note_id: str) -> None:

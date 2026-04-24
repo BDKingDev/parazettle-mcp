@@ -3,8 +3,10 @@
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 
 from parazettel_mcp.config import config
+from parazettel_mcp.models.db_models import DBLink
 from parazettel_mcp.models.schema import LinkType, Note, NoteStatus, NoteType, Tag
 from parazettel_mcp.storage.note_repository import _coerce_datetime, _normalize_wiki_target
 
@@ -574,6 +576,47 @@ def test_delete_reuses_file_backed_source_note_for_preserved_timestamp_update(
     note_repository.delete(target.id)
 
     assert get_counts.get(source.id, 0) == 1
+
+
+def test_delete_preserves_remaining_link_created_at(note_repository):
+    """Deleting one target should not reset created_at on remaining links."""
+    source = note_repository.create(
+        Note(title="Delete CreatedAt Source", content="Source content.")
+    )
+    first_target = note_repository.create(
+        Note(title="Delete CreatedAt First", content="First target.")
+    )
+    second_target = note_repository.create(
+        Note(title="Delete CreatedAt Second", content="Second target.")
+    )
+
+    source.add_link(first_target.id, LinkType.REFERENCE)
+    source.add_link(second_target.id, LinkType.REFERENCE)
+    note_repository.update(source)
+
+    with note_repository.session_factory() as session:
+        original_link = session.scalar(
+            select(DBLink).where(
+                DBLink.source_id == source.id,
+                DBLink.target_id == second_target.id,
+                DBLink.link_type == LinkType.REFERENCE.value,
+            )
+        )
+        assert original_link is not None
+        original_created_at = original_link.created_at
+
+    note_repository.delete(first_target.id)
+
+    with note_repository.session_factory() as session:
+        refreshed_link = session.scalar(
+            select(DBLink).where(
+                DBLink.source_id == source.id,
+                DBLink.target_id == second_target.id,
+                DBLink.link_type == LinkType.REFERENCE.value,
+            )
+        )
+        assert refreshed_link is not None
+        assert refreshed_link.created_at == original_created_at
 
 
 def test_rebuild_index_creates_database_backup(note_repository):

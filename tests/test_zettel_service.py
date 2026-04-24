@@ -1,7 +1,9 @@
 """Tests for the ZettelService class."""
 
 import pytest
+from sqlalchemy import select
 
+from parazettel_mcp.models.db_models import DBLink
 from parazettel_mcp.models.schema import LinkType, NoteStatus, NoteType
 
 
@@ -201,6 +203,48 @@ def test_update_note_refreshes_aliases_without_touching_source_timestamp(
         zettel_service.repository.notes_dir / f"{source.id}.md"
     ).read_text(encoding="utf-8")
     assert f"[[{target.id}|Renamed Timestamp Target]]" in stored_markdown
+
+
+def test_update_note_refreshes_aliases_without_resetting_link_created_at(
+    zettel_service,
+):
+    """Alias-only rewrites should preserve source link created_at in the DB."""
+    target = zettel_service.create_note(
+        title="CreatedAt Target",
+        content="Target body.",
+        note_type=NoteType.PERMANENT,
+    )
+    source = zettel_service.create_note(
+        title="CreatedAt Source",
+        content="Source body.",
+        note_type=NoteType.PERMANENT,
+    )
+
+    zettel_service.create_link(source.id, target.id, LinkType.REFERENCE)
+
+    with zettel_service.repository.session_factory() as session:
+        original_link = session.scalar(
+            select(DBLink).where(
+                DBLink.source_id == source.id,
+                DBLink.target_id == target.id,
+                DBLink.link_type == LinkType.REFERENCE.value,
+            )
+        )
+        assert original_link is not None
+        original_created_at = original_link.created_at
+
+    zettel_service.update_note(note_id=target.id, title="CreatedAt Target Renamed")
+
+    with zettel_service.repository.session_factory() as session:
+        refreshed_link = session.scalar(
+            select(DBLink).where(
+                DBLink.source_id == source.id,
+                DBLink.target_id == target.id,
+                DBLink.link_type == LinkType.REFERENCE.value,
+            )
+        )
+        assert refreshed_link is not None
+        assert refreshed_link.created_at == original_created_at
 
 
 def test_update_note_assigns_project_routing(zettel_service):

@@ -753,12 +753,46 @@ class NoteRepository(Repository[Note]):
         return self._update_note(note)
 
     def update_preserving_updated_at(
-        self, note: Note, *, existing_note: Note
+        self,
+        note: Note,
+        *,
+        existing_note: Note,
+        existing_links_source: Optional[Note] = None,
     ) -> Note:
-        """Rewrite derived markdown while keeping the note's original timestamp."""
+        """Rewrite derived markdown while keeping stable timestamps."""
         return self._update_note(
-            note, preserve_updated_at=True, existing_note=existing_note
+            note,
+            preserve_updated_at=True,
+            existing_note=existing_note,
+            existing_links_source=existing_links_source,
         )
+
+    def _preserve_link_created_at(self, note: Note, existing_note: Note) -> None:
+        """Carry DB-backed link creation timestamps onto rewritten file-backed notes."""
+        exact_timestamps = {
+            (link.target_id, link.link_type, link.description): link.created_at
+            for link in existing_note.links
+        }
+        fallback_timestamps = {
+            (link.target_id, link.link_type): link.created_at
+            for link in existing_note.links
+        }
+
+        preserved_links = []
+        for link in note.links:
+            created_at = exact_timestamps.get(
+                (link.target_id, link.link_type, link.description)
+            )
+            if created_at is None:
+                created_at = fallback_timestamps.get((link.target_id, link.link_type))
+
+            if created_at is None or created_at == link.created_at:
+                preserved_links.append(link)
+                continue
+
+            preserved_links.append(link.model_copy(update={"created_at": created_at}))
+
+        note.links = preserved_links
 
     def _update_note(
         self,
@@ -766,6 +800,7 @@ class NoteRepository(Repository[Note]):
         *,
         preserve_updated_at: bool = False,
         existing_note: Optional[Note] = None,
+        existing_links_source: Optional[Note] = None,
     ) -> Note:
         """Update a note."""
         # Check if note exists
@@ -777,6 +812,9 @@ class NoteRepository(Repository[Note]):
         # Update timestamp unless the caller is only refreshing derived markdown.
         if preserve_updated_at:
             note.updated_at = existing_note.updated_at
+            self._preserve_link_created_at(
+                note, existing_links_source or existing_note
+            )
         else:
             note.updated_at = datetime.datetime.now()
 
@@ -884,7 +922,9 @@ class NoteRepository(Repository[Note]):
             existing_source = file_backed_source.model_copy(deep=True)
             file_backed_source.remove_link(id)
             self.update_preserving_updated_at(
-                file_backed_source, existing_note=existing_source
+                file_backed_source,
+                existing_note=existing_source,
+                existing_links_source=source_note,
             )
 
         # Delete from database
