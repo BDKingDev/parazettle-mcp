@@ -50,6 +50,13 @@ pzk_create_link source_id=NOTE_A target_id=NOTE_B link_type=supports
 
 Any value from either the Primary or Inverse column is valid as `link_type`.
 
+Wiki-link Aliases
+-----------------
+
+Parazettel accepts Obsidian-style piped wiki-links such as `[[NOTE_ID|Displayed Title]]`. On ingest, only the note ID portion is used for indexing, so aliases and heading fragments do not break link resolution.
+
+When a note is rewritten, touched wiki-links are normalized to `[[NOTE_ID|Current Note Title]]` when the title is safe for wiki-link syntax. Renaming a note refreshes stale incoming title aliases, and deleting a note removes incoming markdown references.
+
 Bidirectional Links
 --------------------
 

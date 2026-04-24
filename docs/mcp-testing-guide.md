@@ -139,7 +139,7 @@ Projects (1):
 
 ### `pzk_get_project`
 
-Returns a project with task status summary, routed notes, and linked projects.
+Returns a project with task status summary, next-task preview, routed notes, and linked projects.
 
 **Call:**
 
@@ -156,6 +156,9 @@ ID: {PROJECT_ID}
 Area ID: {AREA_ID}
 Outcome: Working MCP server with full GTD workflow support
 Tasks: 0 total
+
+Next Tasks:
+- None
 
 Notes:
 - None
@@ -273,7 +276,7 @@ Returns the same task. Try `status="done"` — returns empty.
 
 ### `pzk_get_project_tasks`
 
-Returns all tasks for a specific project.
+Returns all tasks for a specific project. Use this when the `pzk_get_project` preview is not enough.
 
 **Call:**
 
@@ -291,6 +294,37 @@ Tasks for project {PROJECT_ID} (1):
 1. Write integration tests (ID: {TASK_ID})
    Status: ready  Due: 2026-03-27
 
+```
+
+---
+
+### `pzk_get_project_notes`
+
+Returns the full note context for non-task notes routed to a specific project. Use this after `pzk_get_project` when you need the actual note bodies, not just note titles.
+
+**Call:**
+
+```json
+{
+  "project_id": "{PROJECT_ID}"
+}
+```
+
+**Expected output:**
+
+```
+Project notes for {PROJECT_ID} (1):
+
+ID: {NOTE_ID}
+Type: permanent
+Created: 2026-04-23T09:00:00
+Updated: 2026-04-23T09:00:00
+Project ID: {PROJECT_ID}
+Area ID: {AREA_ID}
+
+# Project Reference
+
+Useful project context.
 ```
 
 ---
@@ -483,7 +517,7 @@ For project-scoped knowledge notes, swap `area_id` for `project_id`. The note wi
 
 ### `pzk_update_note`
 
-Updates an existing note's content, metadata, and project/area routing. A title-only rename rewrites the leading H1 instead of leaving a stale heading behind.
+Updates an existing note's content, metadata, and project/area routing. A title-only rename rewrites the leading H1 instead of leaving a stale heading behind. If other notes link to the renamed note via wiki-links, their title aliases are refreshed automatically without bumping those source notes' timestamps.
 
 **Call:**
 

@@ -97,6 +97,8 @@ pzk_create_note
 
 Non-area notes must include either `area_id` or `project_id`. If you provide `project_id`, the note inherits the project's `area_id` automatically.
 
+Use `pzk_get_project` when you want a quick project summary with task counts, next tasks, routed note titles, and linked projects. Use `pzk_get_project_notes` when you want the full bodies of all notes routed to the project as working context.
+
 ---
 
 ## Status Lifecycle
