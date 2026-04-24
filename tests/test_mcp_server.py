@@ -546,6 +546,51 @@ class TestMcpServer:
         self.mock_zettel_service.get_note.assert_not_called()
         self.mock_zettel_service.get_note_by_title.assert_not_called()
 
+    def test_get_notes_by_tag_tool_formats_matching_notes_and_respects_limit(self):
+        """pzk_get_notes_by_tag should render full note context for exact-tag matches."""
+        first_note = MagicMock()
+        first_note.id = "note123"
+        first_note.note_type = NoteType.PERMANENT
+        first_note.created_at.isoformat.return_value = "2026-04-23T09:00:00"
+        first_note.updated_at.isoformat.return_value = "2026-04-23T09:15:00"
+        first_note.project_id = "project123"
+        first_note.area_id = "area123"
+        first_note.tags = []
+        first_note.content = "# First Note\n\nUseful context."
+
+        second_note = MagicMock()
+        second_note.id = "note456"
+        second_note.note_type = NoteType.LITERATURE
+        second_note.created_at.isoformat.return_value = "2026-04-23T10:00:00"
+        second_note.updated_at.isoformat.return_value = "2026-04-23T10:30:00"
+        second_note.project_id = "project123"
+        second_note.area_id = "area123"
+        second_note.tags = []
+        second_note.content = "# Second Note\n\nBackground material."
+
+        self.mock_zettel_service.get_notes_by_tag.return_value = [first_note, second_note]
+
+        get_notes_by_tag_func = self.registered_tools["pzk_get_notes_by_tag"]
+        result = get_notes_by_tag_func(tag=" research ", limit=1)
+
+        assert "Notes tagged 'research' (1):" in result
+        assert "ID: note123" in result
+        assert "# First Note" in result
+        assert "note456" not in result
+        self.mock_zettel_service.get_notes_by_tag.assert_called_once_with("research")
+
+    def test_get_notes_by_tag_tool_handles_empty_and_missing_results(self):
+        """pzk_get_notes_by_tag should reject blank tags and handle empty matches."""
+        get_notes_by_tag_func = self.registered_tools["pzk_get_notes_by_tag"]
+
+        empty_result = get_notes_by_tag_func(tag="   ")
+        self.mock_zettel_service.get_notes_by_tag.return_value = []
+        missing_result = get_notes_by_tag_func(tag="research")
+
+        assert empty_result == "Provide a tag name."
+        assert missing_result == "No notes found with tag 'research'."
+        self.mock_zettel_service.get_notes_by_tag.assert_called_once_with("research")
+
     def test_create_link_tool(self):
         """Test the pzk_create_link tool."""
         # Check the tool is registered

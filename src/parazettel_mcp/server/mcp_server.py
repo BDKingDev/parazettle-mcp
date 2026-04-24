@@ -321,6 +321,31 @@ class ZettelkastenMcpServer:
             except Exception as e:
                 return self.format_error_response(e)
 
+        @self.mcp.tool(name="pzk_get_notes_by_tag")
+        def pzk_get_notes_by_tag(tag: str, limit: int = 50) -> str:
+            """Retrieve notes with an exact tag match.
+            Args:
+                tag: Tag name to retrieve
+                limit: Maximum results
+            """
+            try:
+                normalized_tag = str(tag).strip()
+                if not normalized_tag:
+                    return "Provide a tag name."
+
+                notes = self.zettel_service.get_notes_by_tag(normalized_tag)
+                notes = notes[:limit]
+                if not notes:
+                    return f"No notes found with tag '{normalized_tag}'."
+
+                out = f"Notes tagged '{normalized_tag}' ({len(notes)}):\n\n"
+                out += "\n---\n\n".join(
+                    self._format_note_result(note) for note in notes
+                )
+                return out
+            except Exception as e:
+                return self.format_error_response(e)
+
         # Update a note
         @self.mcp.tool(name="pzk_update_note")
         def pzk_update_note(
