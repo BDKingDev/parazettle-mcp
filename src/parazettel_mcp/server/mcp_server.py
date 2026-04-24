@@ -92,6 +92,29 @@ class ZettelkastenMcpServer:
         result += f"\n{note.content}\n"
         return result
 
+    def _resolve_note_identifier(self, identifier: str) -> Optional[Note]:
+        """Resolve a note by ID first, then by title."""
+        normalized = str(identifier).strip()
+        if not normalized:
+            return None
+        note = self.zettel_service.get_note(normalized)
+        if note:
+            return note
+        return self.zettel_service.get_note_by_title(normalized)
+
+    @staticmethod
+    def _normalize_identifier_list(identifiers: List[str]) -> List[str]:
+        """Strip empty values and de-duplicate while preserving order."""
+        seen = set()
+        normalized: List[str] = []
+        for identifier in identifiers:
+            value = str(identifier).strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            normalized.append(value)
+        return normalized
+
     @staticmethod
     def _get_project_preview_tasks(
         tasks: List[Note], limit: int = 5
@@ -253,14 +276,48 @@ class ZettelkastenMcpServer:
             """
             try:
                 identifier = str(identifier)
-                # Try to get by ID first
-                note = self.zettel_service.get_note(identifier)
-                # If not found, try by title
-                if not note:
-                    note = self.zettel_service.get_note_by_title(identifier)
+                note = self._resolve_note_identifier(identifier)
                 if not note:
                     return f"Note not found: {identifier}"
                 return self._format_note_result(note)
+            except Exception as e:
+                return self.format_error_response(e)
+
+        @self.mcp.tool(name="pzk_get_notes")
+        def pzk_get_notes(identifiers: List[str]) -> str:
+            """Retrieve multiple notes by ID or title in one call.
+            Args:
+                identifiers: Note IDs or titles to retrieve
+            """
+            try:
+                normalized = self._normalize_identifier_list(identifiers)
+                if not normalized:
+                    return "Provide at least one note identifier."
+
+                notes: List[Note] = []
+                missing: List[str] = []
+                for identifier in normalized:
+                    note = self._resolve_note_identifier(identifier)
+                    if note:
+                        notes.append(note)
+                    else:
+                        missing.append(identifier)
+
+                if not notes:
+                    out = "No notes found for the provided identifiers."
+                    if missing:
+                        out += "\n\nMissing identifiers:\n"
+                        out += "\n".join(f"- {identifier}" for identifier in missing)
+                    return out
+
+                out = f"Notes retrieved ({len(notes)}/{len(normalized)}):\n\n"
+                out += "\n---\n\n".join(
+                    self._format_note_result(note) for note in notes
+                )
+                if missing:
+                    out += "\n\nMissing identifiers:\n"
+                    out += "\n".join(f"- {identifier}" for identifier in missing)
+                return out
             except Exception as e:
                 return self.format_error_response(e)
 

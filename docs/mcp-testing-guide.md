@@ -240,6 +240,49 @@ Cover the full area → project → task → today view flow.
 
 ---
 
+### `pzk_get_notes`
+
+Retrieves multiple notes by ID or title in one call. This is the batch companion to `pzk_get_note` when an agent needs several note bodies as working context.
+
+**Call:**
+
+```json
+{
+  "identifiers": ["{TASK_ID}", "{PROJECT_ID}"]
+}
+```
+
+**Expected output:**
+
+```
+Notes retrieved (2/2):
+
+ID: {TASK_ID}
+Type: task
+Created: 2026-03-26T...
+Updated: 2026-03-26T...
+Project ID: {PROJECT_ID}
+Area ID: {AREA_ID}
+
+# Write integration tests
+
+Cover the full area → project → task → today view flow.
+
+---
+
+ID: {PROJECT_ID}
+Type: project
+Created: 2026-03-26T...
+Updated: 2026-03-26T...
+Area ID: {AREA_ID}
+
+# Parazettel MCP
+
+Build and ship the parazettel fork with PARA/GTD support.
+```
+
+---
+
 ### `pzk_get_tasks`
 
 Queries tasks with optional filters.
