@@ -264,9 +264,6 @@ class ZettelService:
         )
         if title_changed:
             self._refresh_incoming_link_aliases(note.id)
-            refreshed_note = self.repository.get(note.id)
-            if refreshed_note is not None:
-                note = refreshed_note
         return note
 
     def _refresh_incoming_link_aliases(self, note_id: str) -> None:
