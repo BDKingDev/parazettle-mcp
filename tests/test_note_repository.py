@@ -549,6 +549,33 @@ def test_delete_preserves_aliases_for_remaining_links(note_repository):
     assert "[[delete-second-target|Delete Second Target]]" in stored_markdown
 
 
+def test_delete_reuses_file_backed_source_note_for_preserved_timestamp_update(
+    note_repository, monkeypatch
+):
+    """Delete should not re-read a source note after loading it for cleanup."""
+    source = note_repository.create(
+        Note(title="Delete Read Source", content="Source content.")
+    )
+    target = note_repository.create(
+        Note(title="Delete Read Target", content="Target content.")
+    )
+    source.add_link(target.id, LinkType.REFERENCE)
+    note_repository.update(source)
+
+    original_get = note_repository.get
+    get_counts = {}
+
+    def tracking_get(note_id):
+        get_counts[note_id] = get_counts.get(note_id, 0) + 1
+        return original_get(note_id)
+
+    monkeypatch.setattr(note_repository, "get", tracking_get)
+
+    note_repository.delete(target.id)
+
+    assert get_counts.get(source.id, 0) == 1
+
+
 def test_rebuild_index_creates_database_backup(note_repository):
     """Rebuild should back up the SQLite database before clearing tables."""
     saved = note_repository.create(Note(title="Backup Test", content="Backup content."))

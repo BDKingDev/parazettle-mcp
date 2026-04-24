@@ -276,7 +276,11 @@ class ZettelService:
             source_note = self.repository.get(incoming_note.id)
             if not source_note:
                 continue
-            self.repository.update(source_note, preserve_updated_at=True)
+            self.repository.update(
+                source_note,
+                preserve_updated_at=True,
+                existing_note=source_note,
+            )
 
     def delete_note(self, note_id: str) -> None:
         """Delete a note."""

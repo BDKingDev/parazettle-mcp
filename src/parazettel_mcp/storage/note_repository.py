@@ -748,10 +748,17 @@ class NoteRepository(Repository[Note]):
             # Reconstruct Notes from DB rows — avoids N file reads
             return [self._note_from_db(db_note) for db_note in db_notes]
 
-    def update(self, note: Note, *, preserve_updated_at: bool = False) -> Note:
+    def update(
+        self,
+        note: Note,
+        *,
+        preserve_updated_at: bool = False,
+        existing_note: Optional[Note] = None,
+    ) -> Note:
         """Update a note."""
         # Check if note exists
-        existing_note = self.get(note.id)
+        if existing_note is None:
+            existing_note = self.get(note.id)
         if not existing_note:
             raise ValueError(f"Note with ID {note.id} does not exist")
 
@@ -862,8 +869,13 @@ class NoteRepository(Repository[Note]):
             file_backed_source = self.get(source_note.id)
             if not file_backed_source:
                 continue
+            existing_source = file_backed_source.model_copy(deep=True)
             file_backed_source.remove_link(id)
-            self.update(file_backed_source, preserve_updated_at=True)
+            self.update(
+                file_backed_source,
+                preserve_updated_at=True,
+                existing_note=existing_source,
+            )
 
         # Delete from database
         with self.session_factory() as session:
