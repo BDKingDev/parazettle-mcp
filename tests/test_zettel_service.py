@@ -171,6 +171,38 @@ def test_update_note_refreshes_incoming_aliases_that_match_old_title(zettel_serv
     assert f"[[{target.id}|Renamed Target Title]]" in second_markdown
 
 
+def test_update_note_refreshes_aliases_without_touching_source_timestamp(
+    zettel_service,
+):
+    """Alias-only rewrites should preserve the source note's updated_at value."""
+    target = zettel_service.create_note(
+        title="Timestamp Target Title",
+        content="Target body.",
+        note_type=NoteType.PERMANENT,
+    )
+    source = zettel_service.create_note(
+        title="Timestamp Source",
+        content="Source body.",
+        note_type=NoteType.PERMANENT,
+    )
+
+    zettel_service.create_link(source.id, target.id, LinkType.REFERENCE)
+    original_source = zettel_service.get_note(source.id)
+    assert original_source is not None
+    original_updated_at = original_source.updated_at
+
+    zettel_service.update_note(note_id=target.id, title="Renamed Timestamp Target")
+
+    refreshed_source = zettel_service.get_note(source.id)
+    assert refreshed_source is not None
+    assert refreshed_source.updated_at == original_updated_at
+
+    stored_markdown = (
+        zettel_service.repository.notes_dir / f"{source.id}.md"
+    ).read_text(encoding="utf-8")
+    assert f"[[{target.id}|Renamed Timestamp Target]]" in stored_markdown
+
+
 def test_update_note_assigns_project_routing(zettel_service):
     """Updating a note with project_id should inherit the project area and link it."""
     area = zettel_service.create_area_note(

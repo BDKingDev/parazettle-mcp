@@ -452,6 +452,49 @@ def test_delete_cleans_aliased_source_links(note_repository):
     assert "[[delete-target|Delete Target]]" not in stored_markdown
 
 
+def test_note_to_markdown_uses_bulk_title_lookup_for_aliases(
+    note_repository, monkeypatch
+):
+    """Alias rendering should not re-read each linked note from disk."""
+    source = note_repository.create(
+        Note(title="Bulk Lookup Source", content="Source content.")
+    )
+    target = note_repository.create(
+        Note(title="Bulk Lookup Target", content="Target content.")
+    )
+
+    source.add_link(target.id, LinkType.REFERENCE)
+    source = note_repository.update(source)
+
+    def unexpected_get(_note_id):
+        raise AssertionError("alias rendering should not call NoteRepository.get()")
+
+    monkeypatch.setattr(note_repository, "get", unexpected_get)
+
+    markdown = note_repository._note_to_markdown(source)
+
+    assert f"[[{target.id}|Bulk Lookup Target]]" in markdown
+
+
+def test_update_falls_back_to_plain_link_for_unsafe_alias_titles(note_repository):
+    """Unsafe titles should fall back to plain wiki-links instead of invalid aliases."""
+    source = note_repository.create(
+        Note(title="Unsafe Alias Source", content="Source content.")
+    )
+    target = note_repository.create(
+        Note(title="Unsafe | Alias", content="Target content.")
+    )
+
+    source.add_link(target.id, LinkType.REFERENCE)
+    note_repository.update(source)
+    stored_markdown = (
+        note_repository.notes_dir / f"{source.id}.md"
+    ).read_text(encoding="utf-8")
+
+    assert f"[[{target.id}]]" in stored_markdown
+    assert f"[[{target.id}|Unsafe | Alias]]" not in stored_markdown
+
+
 def test_delete_preserves_aliases_for_remaining_links(note_repository):
     """Deleting one target should not strip aliases from other remaining links."""
     first_target = note_repository.notes_dir / "delete-first-target.md"
@@ -492,11 +535,15 @@ def test_delete_preserves_aliases_for_remaining_links(note_repository):
     )
 
     note_repository.rebuild_index()
+    original = note_repository.get("delete-keep-source")
+    assert original is not None
+    original_updated_at = original.updated_at
     note_repository.delete("delete-first-target")
     refreshed = note_repository.get("delete-keep-source")
     stored_markdown = source_path.read_text(encoding="utf-8")
 
     assert refreshed is not None
+    assert refreshed.updated_at == original_updated_at
     assert [link.target_id for link in refreshed.links] == ["delete-second-target"]
     assert "[[delete-first-target|Delete First Target]]" not in stored_markdown
     assert "[[delete-second-target|Delete Second Target]]" in stored_markdown
