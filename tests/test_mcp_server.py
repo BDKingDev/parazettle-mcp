@@ -856,7 +856,7 @@ class TestMcpServer:
         assert result == "No reminders due today."
 
     def test_get_project_tool_lists_notes_and_linked_projects(self):
-        """pzk_get_project should include routed notes and linked projects."""
+        """pzk_get_project should include task previews, notes, and linked projects."""
         mock_project = MagicMock()
         mock_project.id = "project123"
         mock_project.note_type = NoteType.PROJECT
@@ -864,10 +864,24 @@ class TestMcpServer:
         mock_project.metadata = {"outcome": "Ship it"}
         mock_project.content = "# Project\n\nBody"
 
+        active_task = MagicMock()
+        active_task.id = "task111"
+        active_task.title = "Ship beta"
+        active_task.status = NoteStatus.ACTIVE
+        active_task.priority = 4
+        active_task.due_date = datetime.date(2026, 4, 24)
         ready_task = MagicMock()
+        ready_task.id = "task222"
+        ready_task.title = "Write release notes"
         ready_task.status = NoteStatus.READY
+        ready_task.priority = 2
+        ready_task.due_date = None
         done_task = MagicMock()
+        done_task.id = "task333"
+        done_task.title = "Archive spec"
         done_task.status = NoteStatus.DONE
+        done_task.priority = None
+        done_task.due_date = None
         linked_note = MagicMock()
         linked_note.id = "note123"
         linked_note.title = "Working Notes"
@@ -878,7 +892,11 @@ class TestMcpServer:
         linked_project.note_type = NoteType.PROJECT
 
         self.mock_zettel_service.get_note.return_value = mock_project
-        self.mock_zettel_service.get_project_tasks.return_value = [ready_task, done_task]
+        self.mock_zettel_service.get_project_tasks.return_value = [
+            ready_task,
+            done_task,
+            active_task,
+        ]
         self.mock_zettel_service.get_project_notes.return_value = [linked_note]
         self.mock_zettel_service.get_linked_projects.return_value = [linked_project]
 
@@ -886,10 +904,57 @@ class TestMcpServer:
         result = fn(project_id="project123")
 
         assert "Area ID: area123" in result
+        assert "Next Tasks:" in result
+        assert "[active] Ship beta (ID: task111) - P4, due 2026-04-24" in result
+        assert "[ready] Write release notes (ID: task222) - P2" in result
+        assert "Archive spec" not in result
         assert "Notes:" in result
         assert "Working Notes (ID: note123, type: permanent)" in result
         assert "Linked Projects:" in result
         assert "Parent Project (ID: project999, type: project)" in result
+
+    def test_get_project_notes_tool_formats_note_context_and_respects_limit(self):
+        """pzk_get_project_notes should render full note context for project-scoped notes."""
+        first_note = MagicMock()
+        first_note.id = "note123"
+        first_note.note_type = NoteType.PERMANENT
+        first_note.created_at = datetime.datetime(2026, 4, 20, 9, 0, 0)
+        first_note.updated_at = datetime.datetime(2026, 4, 22, 10, 30, 0)
+        first_note.project_id = "project123"
+        first_note.area_id = "area123"
+        first_note.tags = []
+        first_note.content = "# Working Notes\n\nUseful context."
+
+        second_note = MagicMock()
+        second_note.id = "note456"
+        second_note.note_type = NoteType.LITERATURE
+        second_note.created_at = datetime.datetime(2026, 4, 21, 8, 15, 0)
+        second_note.updated_at = datetime.datetime(2026, 4, 22, 11, 45, 0)
+        second_note.project_id = "project123"
+        second_note.area_id = "area123"
+        second_note.tags = []
+        second_note.content = "# Research\n\nBackground material."
+
+        self.mock_zettel_service.get_project_notes.return_value = [first_note, second_note]
+
+        fn = self.registered_tools["pzk_get_project_notes"]
+        result = fn(project_id="project123", limit=1)
+
+        assert "Project notes for project123 (1):" in result
+        assert "ID: note123" in result
+        assert "Type: permanent" in result
+        assert "# Working Notes" in result
+        assert "note456" not in result
+        self.mock_zettel_service.get_project_notes.assert_called_once_with("project123")
+
+    def test_get_project_notes_tool_handles_empty_results(self):
+        """pzk_get_project_notes should return a friendly empty-state message."""
+        self.mock_zettel_service.get_project_notes.return_value = []
+
+        fn = self.registered_tools["pzk_get_project_notes"]
+        result = fn(project_id="project123")
+
+        assert result == "No project notes found for project project123."
 
     def test_delete_note_tool_deletes_existing_note(self):
         """pzk_delete_note removes a note after confirming it exists."""
