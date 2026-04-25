@@ -390,6 +390,37 @@ class TestMcpServer:
         assert "is not a valid project note" in result
         self.mock_zettel_service.create_project_note.assert_not_called()
 
+    def test_create_subproject_tool_strips_parent_project_id(self):
+        """pzk_create_subproject should normalize parent_project_id before lookup."""
+        mock_project = MagicMock()
+        mock_project.id = "project123"
+        mock_parent = MagicMock()
+        mock_parent.note_type = NoteType.PROJECT
+        mock_parent.area_id = "area123"
+        self.mock_zettel_service.create_project_note.return_value = mock_project
+        self.mock_zettel_service.get_note.return_value = mock_parent
+
+        create_subproject_func = self.registered_tools["pzk_create_subproject"]
+        result = create_subproject_func(
+            parent_project_id="  project999  ",
+            title="Launch slice",
+            content="Ship one slice of the larger effort.",
+            source="transcript",
+        )
+
+        assert "successfully" in result
+        self.mock_zettel_service.get_note.assert_called_with("project999")
+        self.mock_zettel_service.create_project_note.assert_called_with(
+            title="Launch slice",
+            content="Ship one slice of the larger effort.",
+            outcome=None,
+            deadline=None,
+            area_id="area123",
+            project_id="project999",
+            tags=[],
+            source=NoteSource.TRANSCRIPT,
+        )
+
     def test_create_project_tool_requires_area(self):
         """pzk_create_project requires a valid area_id."""
         create_project_func = self.registered_tools["pzk_create_project"]

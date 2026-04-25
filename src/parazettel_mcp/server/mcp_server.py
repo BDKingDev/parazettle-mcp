@@ -1212,6 +1212,10 @@ class ZettelkastenMcpServer:
                         f"Invalid source: {source}. "
                         f"Valid: {', '.join(s.value for s in NoteSource)}"
                     )
+                normalized_parent_project_id = (
+                    parent_project_id.strip() if parent_project_id is not None else None
+                )
+                parent_project_id = normalized_parent_project_id or None
                 resolved_area_id = area_id
                 if parent_project_id:
                     parent_project = self.zettel_service.get_note(parent_project_id)
@@ -1292,6 +1296,10 @@ class ZettelkastenMcpServer:
                         f"Invalid source: {source}. "
                         f"Valid: {', '.join(s.value for s in NoteSource)}"
                     )
+                normalized_parent_project_id = parent_project_id.strip()
+                if not normalized_parent_project_id:
+                    return "parent_project_id is required."
+                parent_project_id = normalized_parent_project_id
                 parent_project = self.zettel_service.get_note(parent_project_id)
                 if not parent_project or parent_project.note_type != NoteType.PROJECT:
                     return (

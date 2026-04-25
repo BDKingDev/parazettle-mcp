@@ -1040,7 +1040,7 @@ Change in note count: 0
 | `pzk_create_area` | title, content | cadence, tags |
 | `pzk_get_area` | area\_id | — |
 | `pzk_list_areas` | — | limit |
-| `pzk_create_project` | title, content, source, area\_id | parent\_project\_id, outcome, deadline, tags |
+| `pzk_create_project` | title, content, source, area\_id or parent\_project\_id | outcome, deadline, tags |
 | `pzk_create_subproject` | parent\_project\_id, title, content, source | outcome, deadline, tags |
 | `pzk_list_projects` | — | include\_done, limit |
 | `pzk_get_project` | project\_id | — |

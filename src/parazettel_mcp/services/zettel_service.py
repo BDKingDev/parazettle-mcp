@@ -803,7 +803,11 @@ class ZettelService:
         tags: Optional[List[str]] = None,
         source: NoteSource = NoteSource.MANUAL,
     ) -> Note:
-        """Create a PROJECT-type note linked to an area."""
+        """Create a PROJECT-type note.
+
+        Top-level projects require an ``area_id``. Subprojects pass a parent project
+        through ``project_id`` and inherit that parent project's ``area_id``.
+        """
         if project_id:
             parent_project = self._get_project_for_routing(project_id)
             if not parent_project.area_id:
